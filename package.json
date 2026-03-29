@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "betterknown": "^1.2.0",
+    "betterknown": "^0.4.1",
     "maplibre-gl": "^5.4.0",
     "next": "16.0.0",
     "react": "19.2.0",
