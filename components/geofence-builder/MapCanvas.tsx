@@ -27,7 +27,7 @@ export function MapCanvas({ activeMode, geometry, onGeometryChange }: MapCanvasP
 
     const map = initMap(containerRef.current);
     mapRef.current = map;
-    let unsubscribe = () => undefined;
+    let unsubscribe: () => void = () => {};
 
     map.on("load", () => {
       addMapControls(map);

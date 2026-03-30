@@ -42,7 +42,7 @@ export function setDrawMode(draw: TerraDraw, mode: DrawMode) {
 export function subscribeToDrawChanges(draw: TerraDraw, onChange: () => void): () => void {
   const instance = draw as TerraDrawWithEvents;
   if (!instance.on) {
-    return () => undefined;
+    return () => {};
   }
 
   instance.on("change", onChange);
