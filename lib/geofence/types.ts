@@ -4,7 +4,7 @@ export type SupportedGeofenceGeometry = Polygon | MultiPolygon;
 
 export type GeofenceFeature = Feature<SupportedGeofenceGeometry>;
 
-export type DrawMode = "select" | "polygon" | "rectangle";
+export type DrawMode = "select" | "polygon" | "rectangle" | "delete-selection";
 
 export type PrecisionOption = 5 | 6 | 7 | 8;
 

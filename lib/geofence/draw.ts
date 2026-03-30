@@ -1,4 +1,4 @@
-import { TerraDraw, TerraDrawPolygonMode, TerraDrawRectangleMode, TerraDrawSelectMode } from "terra-draw";
+import { TerraDraw, TerraDrawDeleteSelectionMode, TerraDrawPolygonMode, TerraDrawRectangleMode, TerraDrawSelectMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import type { Feature } from "geojson";
 import type { Map as MapLibreMap } from "maplibre-gl";
@@ -11,7 +11,7 @@ type TerraDrawWithEvents = TerraDraw & {
   addFeatures?: (features: Feature[]) => void;
 };
 
-const DRAW_MODES: DrawMode[] = ["select", "polygon", "rectangle"];
+const DRAW_MODES: DrawMode[] = ["select", "polygon", "rectangle", "delete-selection"];
 
 export function initTerraDraw(map: MapLibreMap): TerraDraw {
   const draw = new TerraDraw({
@@ -22,7 +22,8 @@ export function initTerraDraw(map: MapLibreMap): TerraDraw {
     modes: [
       new TerraDrawSelectMode(),
       new TerraDrawPolygonMode(),
-      new TerraDrawRectangleMode()
+      new TerraDrawRectangleMode(),
+      new TerraDrawDeleteSelectionMode()
     ]
   });
 
@@ -42,7 +43,7 @@ export function setDrawMode(draw: TerraDraw, mode: DrawMode) {
 export function subscribeToDrawChanges(draw: TerraDraw, onChange: () => void): () => void {
   const instance = draw as TerraDrawWithEvents;
   if (!instance.on) {
-    return () => {};
+    return () => undefined;
   }
 
   instance.on("change", onChange);
