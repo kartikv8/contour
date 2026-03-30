@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { CoordinateTable } from "../../components/CoordinateTable";
 import { ExportPanel } from "../../components/ExportPanel";
 import { ImportPanel } from "../../components/ImportPanel";
@@ -12,10 +12,7 @@ import { EditorMode } from "../../lib/geometry/types";
 import { validateMultiPolygon } from "../../lib/geometry/validate";
 import { fromWktToMultiPolygon, toWktMultiPolygon } from "../../lib/geometry/wkt";
 
-type CursorCoords = { lng: number; lat: number };
-
 export default function GeofenceBuilderPage() {
-  const [cursorCoords, setCursorCoords] = useState<CursorCoords>();
   const [mode, setMode] = useState<EditorMode>("select");
   const [geometry, setGeometry] = useState<GeoJSON.MultiPolygon | null>(null);
   const [precision, setPrecision] = useState<number>(6);
@@ -40,11 +37,11 @@ export default function GeofenceBuilderPage() {
     return geometry.coordinates[0][0] as [number, number][];
   }, [geometry]);
 
-  const handleDrawPolygonsChange = (polygons: GeoJSON.Polygon[]) => {
+  const handleDrawPolygonsChange = useCallback((polygons: GeoJSON.Polygon[]) => {
     const multiPolygon = multipolygonFromPolygons(polygons);
     setGeometry(multiPolygon ? normalizeAnySupportedGeometryToMultiPolygon(multiPolygon) : null);
     setImportError(null);
-  };
+  }, []);
 
   const handleImportWkt = () => {
     try {
@@ -72,9 +69,6 @@ export default function GeofenceBuilderPage() {
       <aside className="builder-left-pane">
         <h1>Geofence Builder</h1>
         <p className="muted">Milestone 3: draw + normalize + validate + WKT.</p>
-        <p className="cursor-chip" aria-live="polite">
-          Cursor: {cursorCoords ? `${cursorCoords.lng.toFixed(6)}, ${cursorCoords.lat.toFixed(6)}` : "—"}
-        </p>
 
         <Toolbar mode={mode} onModeChange={setMode} />
         <ImportPanel
@@ -95,12 +89,7 @@ export default function GeofenceBuilderPage() {
       </aside>
 
       <section className="builder-right-pane">
-        <MapCanvas
-          mode={mode}
-          importedGeometry={geometry}
-          onCursorChange={setCursorCoords}
-          onDrawPolygonsChange={handleDrawPolygonsChange}
-        />
+        <MapCanvas mode={mode} importedGeometry={geometry} onDrawPolygonsChange={handleDrawPolygonsChange} />
       </section>
     </main>
   );

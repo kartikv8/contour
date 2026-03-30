@@ -11,11 +11,10 @@ type CursorCoords = { lng: number; lat: number };
 type MapCanvasProps = {
   mode: EditorMode;
   importedGeometry: GeoJSON.MultiPolygon | null;
-  onCursorChange?: (coords: CursorCoords | undefined) => void;
   onDrawPolygonsChange: (polygons: GeoJSON.Polygon[]) => void;
 };
 
-export function MapCanvas({ mode, importedGeometry, onCursorChange, onDrawPolygonsChange }: MapCanvasProps) {
+export function MapCanvas({ mode, importedGeometry, onDrawPolygonsChange }: MapCanvasProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const drawRef = useRef<DrawSeam | null>(null);
@@ -41,7 +40,6 @@ export function MapCanvas({ mode, importedGeometry, onCursorChange, onDrawPolygo
       container: mapContainerRef.current,
       onCursorMove: (coords) => {
         setCursor(coords);
-        onCursorChange?.(coords);
       },
     });
 
@@ -90,7 +88,6 @@ export function MapCanvas({ mode, importedGeometry, onCursorChange, onDrawPolygo
       }
       resetButton.removeEventListener("click", resetView);
       resetButton.remove();
-      onCursorChange?.(undefined);
       if (drawRef.current) {
         drawRef.current.cleanup();
       }
@@ -98,7 +95,7 @@ export function MapCanvas({ mode, importedGeometry, onCursorChange, onDrawPolygo
       mapRef.current = null;
       mapCleanup();
     };
-  }, [onCursorChange, onDrawPolygonsChange]);
+  }, [onDrawPolygonsChange]);
 
   useEffect(() => {
     if (!drawRef.current) {
