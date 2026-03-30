@@ -1,21 +1,34 @@
 import { normalizeAnySupportedGeometryToMultiPolygon, roundCoordinates } from "./normalize";
 
-function splitTopLevelGroups(input: string): string[] {
+function stripOuterParentheses(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("(") || !trimmed.endsWith(")")) {
+    throw new Error("Invalid WKT format.");
+  }
+
+  return trimmed.slice(1, -1).trim();
+}
+
+function extractTopLevelGroups(input: string): string[] {
   const groups: string[] = [];
   let depth = 0;
   let start = -1;
 
   for (let i = 0; i < input.length; i += 1) {
     const char = input[i];
+
     if (char === "(") {
-      depth += 1;
-      if (depth === 1) {
+      if (depth === 0) {
         start = i + 1;
       }
-    } else if (char === ")") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === ")") {
       depth -= 1;
       if (depth === 0 && start >= 0) {
-        groups.push(input.slice(start, i));
+        groups.push(input.slice(start, i).trim());
         start = -1;
       }
     }
@@ -30,9 +43,13 @@ function parseRing(raw: string): [number, number][] {
     .map((chunk) => chunk.trim())
     .filter(Boolean)
     .map((pair) => {
-      const [lngText, latText] = pair.split(/\s+/);
-      const lng = Number(lngText);
-      const lat = Number(latText);
+      const parts = pair.split(/\s+/).filter(Boolean);
+      if (parts.length < 2) {
+        throw new Error("Malformed coordinate pair in WKT.");
+      }
+
+      const lng = Number(parts[0]);
+      const lat = Number(parts[1]);
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
         throw new Error("Malformed coordinate pair in WKT.");
       }
@@ -40,13 +57,13 @@ function parseRing(raw: string): [number, number][] {
     });
 }
 
-function parsePolygonBody(body: string): [number, number][][] {
-  const ringGroups = splitTopLevelGroups(body);
-  if (ringGroups.length === 0) {
+function parsePolygonContent(content: string): [number, number][][] {
+  const rings = extractTopLevelGroups(content);
+  if (rings.length === 0) {
     throw new Error("Invalid POLYGON WKT format.");
   }
 
-  return ringGroups.map(parseRing);
+  return rings.map(parseRing);
 }
 
 export function fromWktToMultiPolygon(input: string): GeoJSON.MultiPolygon {
@@ -54,19 +71,19 @@ export function fromWktToMultiPolygon(input: string): GeoJSON.MultiPolygon {
   const upper = trimmed.toUpperCase();
 
   if (upper.startsWith("POLYGON")) {
-    const body = trimmed.slice(trimmed.indexOf("(")).trim();
-    const polygonRings = parsePolygonBody(body);
+    const body = stripOuterParentheses(trimmed.slice(trimmed.indexOf("(")));
+    const polygonRings = parsePolygonContent(body);
     return normalizeAnySupportedGeometryToMultiPolygon({ type: "Polygon", coordinates: polygonRings });
   }
 
   if (upper.startsWith("MULTIPOLYGON")) {
-    const body = trimmed.slice(trimmed.indexOf("(")).trim();
-    const polygonGroups = splitTopLevelGroups(body);
-    if (polygonGroups.length === 0) {
+    const body = stripOuterParentheses(trimmed.slice(trimmed.indexOf("(")));
+    const polygonContents = extractTopLevelGroups(body);
+    if (polygonContents.length === 0) {
       throw new Error("Invalid MULTIPOLYGON WKT format.");
     }
 
-    const polygons = polygonGroups.map((polygonText) => parsePolygonBody(`(${polygonText})`));
+    const polygons = polygonContents.map(parsePolygonContent);
     return normalizeAnySupportedGeometryToMultiPolygon({
       type: "MultiPolygon",
       coordinates: polygons,

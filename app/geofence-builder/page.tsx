@@ -18,6 +18,7 @@ export default function GeofenceBuilderPage() {
   const [precision, setPrecision] = useState<number>(6);
   const [wktInput, setWktInput] = useState<string>("");
   const [importError, setImportError] = useState<string | null>(null);
+  const [importRevision, setImportRevision] = useState<number>(0);
 
   const validation = useMemo(() => validateMultiPolygon(geometry), [geometry]);
 
@@ -48,6 +49,7 @@ export default function GeofenceBuilderPage() {
       const imported = fromWktToMultiPolygon(wktInput);
       const normalized = normalizeAnySupportedGeometryToMultiPolygon(imported);
       setGeometry(normalized);
+      setImportRevision((previous) => previous + 1);
       setImportError(null);
       setMode("select");
     } catch (error) {
@@ -89,7 +91,12 @@ export default function GeofenceBuilderPage() {
       </aside>
 
       <section className="builder-right-pane">
-        <MapCanvas mode={mode} importedGeometry={geometry} onDrawPolygonsChange={handleDrawPolygonsChange} />
+        <MapCanvas
+          mode={mode}
+          importedGeometry={geometry}
+          importRevision={importRevision}
+          onDrawPolygonsChange={handleDrawPolygonsChange}
+        />
       </section>
     </main>
   );

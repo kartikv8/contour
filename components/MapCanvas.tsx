@@ -11,17 +11,19 @@ type CursorCoords = { lng: number; lat: number };
 type MapCanvasProps = {
   mode: EditorMode;
   importedGeometry: GeoJSON.MultiPolygon | null;
+  importRevision: number;
   onDrawPolygonsChange: (polygons: GeoJSON.Polygon[]) => void;
 };
 
-export function MapCanvas({ mode, importedGeometry, onDrawPolygonsChange }: MapCanvasProps) {
+export function MapCanvas({ mode, importedGeometry, importRevision, onDrawPolygonsChange }: MapCanvasProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const drawRef = useRef<DrawSeam | null>(null);
   const modeRef = useRef<EditorMode>(mode);
   const importedGeometryRef = useRef<GeoJSON.MultiPolygon | null>(importedGeometry);
+  const importRevisionRef = useRef<number>(importRevision);
+  const appliedImportRevisionRef = useRef<number>(0);
   const [cursor, setCursor] = useState<CursorCoords>();
-  const importedHashRef = useRef<string>("none");
 
   useEffect(() => {
     modeRef.current = mode;
@@ -30,6 +32,10 @@ export function MapCanvas({ mode, importedGeometry, onDrawPolygonsChange }: MapC
   useEffect(() => {
     importedGeometryRef.current = importedGeometry;
   }, [importedGeometry]);
+
+  useEffect(() => {
+    importRevisionRef.current = importRevision;
+  }, [importRevision]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -59,8 +65,8 @@ export function MapCanvas({ mode, importedGeometry, onDrawPolygonsChange }: MapC
       });
 
       const currentImported = importedGeometryRef.current;
-      if (currentImported) {
-        importedHashRef.current = JSON.stringify(currentImported.coordinates);
+      if (currentImported && importRevisionRef.current > 0) {
+        appliedImportRevisionRef.current = importRevisionRef.current;
         draw.replaceWithMultiPolygon(currentImported);
         onDrawPolygonsChange(draw.getPolygons());
       }
@@ -103,6 +109,17 @@ export function MapCanvas({ mode, importedGeometry, onDrawPolygonsChange }: MapC
     }
 
     drawRef.current.setMode(mode);
+
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    if (mode === "select") {
+      map.dragPan.enable();
+    } else {
+      map.dragPan.disable();
+    }
   }, [mode]);
 
   useEffect(() => {
@@ -110,15 +127,14 @@ export function MapCanvas({ mode, importedGeometry, onDrawPolygonsChange }: MapC
       return;
     }
 
-    const nextHash = JSON.stringify(importedGeometry.coordinates);
-    if (nextHash === importedHashRef.current) {
+    if (importRevision <= appliedImportRevisionRef.current) {
       return;
     }
 
-    importedHashRef.current = nextHash;
+    appliedImportRevisionRef.current = importRevision;
     drawRef.current.replaceWithMultiPolygon(importedGeometry);
     onDrawPolygonsChange(drawRef.current.getPolygons());
-  }, [importedGeometry, onDrawPolygonsChange]);
+  }, [importRevision, importedGeometry, onDrawPolygonsChange]);
 
   return (
     <div className="map-canvas-shell">
