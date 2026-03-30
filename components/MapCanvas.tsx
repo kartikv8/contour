@@ -19,8 +19,18 @@ export function MapCanvas({ mode, importedGeometry, onCursorChange, onDrawPolygo
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const drawRef = useRef<DrawSeam | null>(null);
+  const modeRef = useRef<EditorMode>(mode);
+  const importedGeometryRef = useRef<GeoJSON.MultiPolygon | null>(importedGeometry);
   const [cursor, setCursor] = useState<CursorCoords>();
   const importedHashRef = useRef<string>("none");
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+    importedGeometryRef.current = importedGeometry;
+  }, [importedGeometry]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -35,12 +45,34 @@ export function MapCanvas({ mode, importedGeometry, onCursorChange, onDrawPolygo
       },
     });
 
-    const draw = initDrawSeam(map);
-    drawRef.current = draw;
+    let unsubscribeDrawChanges: (() => void) | null = null;
 
-    const unsubscribe = draw.subscribeToChanges(() => {
-      onDrawPolygonsChange(draw.getPolygons());
-    });
+    const startDrawWhenStyleReady = () => {
+      if (drawRef.current) {
+        return;
+      }
+
+      const draw = initDrawSeam(map);
+      drawRef.current = draw;
+      draw.setMode(modeRef.current);
+
+      unsubscribeDrawChanges = draw.subscribeToChanges(() => {
+        onDrawPolygonsChange(draw.getPolygons());
+      });
+
+      const currentImported = importedGeometryRef.current;
+      if (currentImported) {
+        importedHashRef.current = JSON.stringify(currentImported.coordinates);
+        draw.replaceWithMultiPolygon(currentImported);
+        onDrawPolygonsChange(draw.getPolygons());
+      }
+    };
+
+    if (map.isStyleLoaded()) {
+      startDrawWhenStyleReady();
+    } else {
+      map.on("load", startDrawWhenStyleReady);
+    }
 
     const resetButton = document.createElement("button");
     resetButton.className = "map-reset-button";
@@ -52,11 +84,16 @@ export function MapCanvas({ mode, importedGeometry, onCursorChange, onDrawPolygo
     mapRef.current = map;
 
     return () => {
-      unsubscribe();
+      map.off("load", startDrawWhenStyleReady);
+      if (unsubscribeDrawChanges) {
+        unsubscribeDrawChanges();
+      }
       resetButton.removeEventListener("click", resetView);
       resetButton.remove();
       onCursorChange?.(undefined);
-      draw.cleanup();
+      if (drawRef.current) {
+        drawRef.current.cleanup();
+      }
       drawRef.current = null;
       mapRef.current = null;
       mapCleanup();
