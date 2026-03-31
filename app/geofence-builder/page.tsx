@@ -1,46 +1,75 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { CoordinateTable } from "../../components/CoordinateTable";
-import { ExportPanel } from "../../components/ExportPanel";
-import { ImportPanel } from "../../components/ImportPanel";
+import { ImportExportPanel } from "../../components/ImportExportPanel";
 import { MapCanvas } from "../../components/MapCanvas";
 import { Toolbar } from "../../components/Toolbar";
-import { ValidationPanel } from "../../components/ValidationPanel";
-import { multipolygonFromPolygons, normalizeAnySupportedGeometryToMultiPolygon } from "../../lib/geometry/normalize";
+import { normalizeAnySupportedGeometryToMultiPolygon } from "../../lib/geometry/normalize";
 import { EditorMode } from "../../lib/geometry/types";
 import { validateMultiPolygon } from "../../lib/geometry/validate";
 import { fromWktToMultiPolygon, toWktMultiPolygon } from "../../lib/geometry/wkt";
 
+type ShapeEntry = {
+  id: string;
+  polygon: GeoJSON.Polygon;
+};
+
+function toMultiPolygonFromShapes(shapes: ShapeEntry[]): GeoJSON.MultiPolygon | null {
+  if (shapes.length === 0) {
+    return null;
+  }
+
+  return {
+    type: "MultiPolygon",
+    coordinates: shapes.map((shape) => shape.polygon.coordinates),
+  };
+}
+
 export default function GeofenceBuilderPage() {
   const [mode, setMode] = useState<EditorMode>("select");
-  const [geometry, setGeometry] = useState<GeoJSON.MultiPolygon | null>(null);
+  const [shapes, setShapes] = useState<ShapeEntry[]>([]);
   const [precision, setPrecision] = useState<number>(6);
   const [wktInput, setWktInput] = useState<string>("");
   const [importError, setImportError] = useState<string | null>(null);
   const [importRevision, setImportRevision] = useState<number>(0);
+  const [clearRevision, setClearRevision] = useState<number>(0);
+  const [deleteSelectedRevision, setDeleteSelectedRevision] = useState<number>(0);
 
-  const validation = useMemo(() => validateMultiPolygon(geometry), [geometry]);
+  const combinedGeometry = useMemo(() => toMultiPolygonFromShapes(shapes), [shapes]);
 
-  const wktPreview = useMemo(() => {
-    if (!geometry || !validation.valid) {
+  const shapeExports = useMemo(() => {
+    return shapes.map((shape, index) => {
+      const shapeGeometry: GeoJSON.MultiPolygon = {
+        type: "MultiPolygon",
+        coordinates: [shape.polygon.coordinates],
+      };
+      const validation = validateMultiPolygon(shapeGeometry);
+
+      return {
+        id: shape.id,
+        valid: validation.valid,
+        errors: validation.errors,
+        wkt: validation.valid ? toWktMultiPolygon(shapeGeometry, precision) : "",
+        index,
+      };
+    });
+  }, [precision, shapes]);
+
+  const combinedWkt = useMemo(() => {
+    if (!combinedGeometry) {
       return "";
     }
 
-    return toWktMultiPolygon(geometry, precision);
-  }, [geometry, precision, validation.valid]);
-
-  const coordinatePreview = useMemo<[number, number][]>(() => {
-    if (!geometry?.coordinates.length || !geometry.coordinates[0]?.length || !geometry.coordinates[0][0]) {
-      return [];
+    const validation = validateMultiPolygon(combinedGeometry);
+    if (!validation.valid) {
+      return "";
     }
 
-    return geometry.coordinates[0][0] as [number, number][];
-  }, [geometry]);
+    return toWktMultiPolygon(combinedGeometry, precision);
+  }, [combinedGeometry, precision]);
 
   const handleDrawPolygonsChange = useCallback((polygons: GeoJSON.Polygon[]) => {
-    const multiPolygon = multipolygonFromPolygons(polygons);
-    setGeometry(multiPolygon ? normalizeAnySupportedGeometryToMultiPolygon(multiPolygon) : null);
+    setShapes(polygons.map((polygon, index) => ({ id: `shape-${index + 1}`, polygon })));
     setImportError(null);
   }, []);
 
@@ -48,7 +77,12 @@ export default function GeofenceBuilderPage() {
     try {
       const imported = fromWktToMultiPolygon(wktInput);
       const normalized = normalizeAnySupportedGeometryToMultiPolygon(imported);
-      setGeometry(normalized);
+      const importedShapes = normalized.coordinates.map((polygon, index) => ({
+        id: `imported-${Date.now()}-${index + 1}`,
+        polygon: { type: "Polygon" as const, coordinates: polygon },
+      }));
+
+      setShapes(importedShapes);
       setImportRevision((previous) => previous + 1);
       setImportError(null);
       setMode("select");
@@ -58,43 +92,57 @@ export default function GeofenceBuilderPage() {
     }
   };
 
-  const handleCopy = async () => {
-    if (!wktPreview || !validation.valid) {
+  const handleCopyShape = async (shapeId: string) => {
+    const entry = shapeExports.find((shape) => shape.id === shapeId);
+    if (!entry || !entry.valid || !entry.wkt) {
       return;
     }
 
-    await navigator.clipboard.writeText(wktPreview);
+    await navigator.clipboard.writeText(entry.wkt);
+  };
+
+  const handleCopyCombined = async () => {
+    if (!combinedWkt) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(combinedWkt);
   };
 
   return (
     <main className="builder-shell">
       <aside className="builder-left-pane">
         <h1>Geofence Builder</h1>
-        <p className="muted">Milestone 3: draw + normalize + validate + WKT.</p>
+        <p className="muted">Draw, import, and export per-shape WKT.</p>
 
-        <Toolbar mode={mode} onModeChange={setMode} />
-        <ImportPanel
+        <Toolbar
+          mode={mode}
+          onModeChange={setMode}
+          onDeleteSelected={() => setDeleteSelectedRevision((previous) => previous + 1)}
+          onClearAll={() => setClearRevision((previous) => previous + 1)}
+        />
+
+        <ImportExportPanel
           wktInput={wktInput}
           importError={importError}
+          precision={precision}
+          shapeExports={shapeExports}
+          combinedWkt={combinedWkt}
           onWktInputChange={setWktInput}
           onImportWkt={handleImportWkt}
-        />
-        <ExportPanel
-          precision={precision}
-          wktPreview={wktPreview}
-          canExport={validation.valid && Boolean(wktPreview)}
           onPrecisionChange={setPrecision}
-          onCopy={handleCopy}
+          onCopyShape={handleCopyShape}
+          onCopyCombined={handleCopyCombined}
         />
-        <ValidationPanel valid={validation.valid} errors={validation.errors} />
-        <CoordinateTable coordinates={coordinatePreview} />
       </aside>
 
       <section className="builder-right-pane">
         <MapCanvas
           mode={mode}
-          importedGeometry={geometry}
+          importedGeometry={combinedGeometry}
           importRevision={importRevision}
+          clearRevision={clearRevision}
+          deleteSelectedRevision={deleteSelectedRevision}
           onDrawPolygonsChange={handleDrawPolygonsChange}
         />
       </section>

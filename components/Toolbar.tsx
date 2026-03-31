@@ -3,11 +3,13 @@ import { EditorMode } from "../lib/geometry/types";
 type ToolbarProps = {
   mode: EditorMode;
   onModeChange: (mode: EditorMode) => void;
+  onClearAll: () => void;
+  onDeleteSelected: () => void;
 };
 
 const MODES: EditorMode[] = ["select", "polygon", "rectangle"];
 
-export function Toolbar({ mode, onModeChange }: ToolbarProps) {
+export function Toolbar({ mode, onModeChange, onClearAll, onDeleteSelected }: ToolbarProps) {
   return (
     <section className="panel" aria-label="Toolbar">
       <h2>Toolbar</h2>
@@ -22,6 +24,14 @@ export function Toolbar({ mode, onModeChange }: ToolbarProps) {
             {option}
           </button>
         ))}
+      </div>
+      <div className="toolbar-row toolbar-actions">
+        <button type="button" onClick={onDeleteSelected} className="toolbar-button">
+          Delete selected
+        </button>
+        <button type="button" onClick={onClearAll} className="toolbar-button">
+          Clear all
+        </button>
       </div>
     </section>
   );

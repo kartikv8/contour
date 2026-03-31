@@ -1,4 +1,4 @@
-import maplibregl, { LngLatLike, Map, NavigationControl } from "maplibre-gl";
+import maplibregl, { LngLatLike, LngLatBounds, Map, NavigationControl } from "maplibre-gl";
 import { DEFAULT_MAP_VIEW, MAP_STYLE_URL } from "./styles";
 
 export type InitMapParams = {
@@ -38,4 +38,22 @@ export function initMap({ container, onCursorMove }: InitMapParams): InitMapResu
   };
 
   return { map, resetView, cleanup };
+}
+
+export function fitMapToMultiPolygon(map: Map, geometry: GeoJSON.MultiPolygon) {
+  const bounds = new LngLatBounds();
+  let hasPoint = false;
+
+  geometry.coordinates.forEach((polygon) => {
+    polygon.forEach((ring) => {
+      ring.forEach(([lng, lat]) => {
+        bounds.extend([lng, lat]);
+        hasPoint = true;
+      });
+    });
+  });
+
+  if (hasPoint) {
+    map.fitBounds(bounds, { padding: 48, duration: 500 });
+  }
 }

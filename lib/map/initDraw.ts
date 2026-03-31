@@ -16,6 +16,8 @@ export type DrawSeam = {
   subscribeToChanges: (onChange: () => void) => () => void;
   getPolygons: () => Polygon[];
   replaceWithMultiPolygon: (geometry: GeoJSON.MultiPolygon) => void;
+  clearAll: () => void;
+  deleteSelected: () => number;
   cleanup: () => void;
 };
 
@@ -77,9 +79,27 @@ export function initDrawSeam(map: Map): DrawSeam {
     draw.setMode("select");
   };
 
+  const clearAll = () => {
+    draw.clear();
+  };
+
+  const deleteSelected = () => {
+    const selectedIds = draw
+      .getSnapshot()
+      .filter((feature) => Boolean((feature.properties as { selected?: boolean } | undefined)?.selected))
+      .map((feature) => feature.id)
+      .filter((id): id is string | number => id !== undefined && id !== null);
+
+    if (selectedIds.length > 0) {
+      draw.removeFeatures(selectedIds);
+    }
+
+    return selectedIds.length;
+  };
+
   const cleanup = () => {
     draw.stop();
   };
 
-  return { draw, setMode, subscribeToChanges, getPolygons, replaceWithMultiPolygon, cleanup };
+  return { draw, setMode, subscribeToChanges, getPolygons, replaceWithMultiPolygon, clearAll, deleteSelected, cleanup };
 }
