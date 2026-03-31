@@ -20,9 +20,10 @@ export type DrawSeam = {
   cleanup: () => void;
 };
 
-function toPolygonFeature(rings: [number, number][][]): GeoJSONStoreFeatures {
+function toPolygonFeature(id: string | number, rings: [number, number][][]): GeoJSONStoreFeatures {
   return {
     type: "Feature",
+    id,
     properties: { mode: "polygon" },
     geometry: {
       type: "Polygon",
@@ -70,7 +71,7 @@ export function initDrawSeam(map: Map): DrawSeam {
 
   const replaceWithMultiPolygon = (geometry: GeoJSON.MultiPolygon) => {
     draw.clear();
-    const features = geometry.coordinates.map((rings) => toPolygonFeature(rings as [number, number][][]));
+    const features = geometry.coordinates.map((rings) => toPolygonFeature(draw.getFeatureId(), rings as [number, number][][]));
     if (features.length > 0) {
       draw.addFeatures(features);
     }
