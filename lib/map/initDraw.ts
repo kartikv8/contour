@@ -15,10 +15,21 @@ export type DrawSeam = {
   setMode: (mode: EditorMode) => void;
   subscribeToChanges: (onChange: () => void) => () => void;
   getPolygons: () => Polygon[];
-  replaceWithMultiPolygon: (geometry: GeoJSON.MultiPolygon) => void;
+  replaceWithMultiPolygon: (geometry: GeoJSON.MultiPolygon) => Polygon[];
   clearAll: () => void;
   cleanup: () => void;
 };
+
+const TERRA_DRAW_COORDINATE_PRECISION = 9;
+
+function roundCoordinate(value: number): number {
+  const factor = 10 ** TERRA_DRAW_COORDINATE_PRECISION;
+  return Math.round(value * factor) / factor;
+}
+
+function toTerraDrawRings(rings: [number, number][][]): [number, number][][] {
+  return rings.map((ring) => ring.map(([lng, lat]) => [roundCoordinate(lng), roundCoordinate(lat)]));
+}
 
 function toPolygonFeature(id: string | number, rings: [number, number][][]): GeoJSONStoreFeatures {
   return {
@@ -69,54 +80,24 @@ export function initDrawSeam(map: Map): DrawSeam {
       .map((feature) => feature.geometry as Polygon);
   };
 
-  const replaceWithMultiPolygon = (geometry: GeoJSON.MultiPolygon) => {
-    try {
-      console.log("[DRAW_HYDRATE] replaceWithMultiPolygon called", {
-        polygonCount: geometry.coordinates.length,
-      });
+  const replaceWithMultiPolygon = (geometry: GeoJSON.MultiPolygon): Polygon[] => {
+    draw.clear();
 
-      console.log("[DRAW_HYDRATE] before draw.clear()");
-      draw.clear();
+    const features = geometry.coordinates.map((rings) =>
+      toPolygonFeature(draw.getFeatureId(), toTerraDrawRings(rings as [number, number][][])),
+    );
 
-      const features = geometry.coordinates.map((rings, polygonIndex) => {
-        const featureId = draw.getFeatureId();
-        const feature = toPolygonFeature(featureId, rings as [number, number][][]);
+    if (features.length > 0) {
+      const addResults = draw.addFeatures(features);
+      const invalidResults = addResults.filter((result) => !result.valid);
 
-        console.log("[DRAW_HYDRATE] generated TerraDraw feature", {
-          polygonIndex,
-          feature,
-          featureId: feature.id,
-          mode: feature.properties.mode,
-          geometryType: feature.geometry.type,
-          ringCount: rings.length,
-          coordinateCountByRing: rings.map((ring) => ring.length),
-        });
-
-        return feature;
-      });
-
-      if (features.length > 0) {
-        console.log("[DRAW_HYDRATE] before draw.addFeatures(...)", {
-          featureCount: features.length,
-          featureIds: features.map((feature) => feature.id),
-        });
-        const addResults = draw.addFeatures(features);
-        console.log("[DRAW_HYDRATE] draw.addFeatures(...) result", { addResults });
+      if (invalidResults.length > 0) {
+        console.error("[DRAW_HYDRATE] TerraDraw rejected imported features", { invalidResults });
       }
-
-      const snapshot = draw.getSnapshot();
-      console.log("[DRAW_HYDRATE] draw snapshot immediately after hydration", {
-        snapshotFeatureCount: snapshot.length,
-        polygonFeatureCount: snapshot.filter((feature) => feature.geometry.type === "Polygon").length,
-        allGeometryTypes: snapshot.map((feature) => feature.geometry.type),
-      });
-
-      draw.setMode("select");
-      console.log("[DRAW_HYDRATE] active mode after hydration", { mode: draw.getMode() });
-    } catch (error) {
-      console.error("[DRAW_HYDRATE] replaceWithMultiPolygon exception", error);
-      throw error;
     }
+
+    draw.setMode("select");
+    return getPolygons();
   };
 
   const clearAll = () => {
