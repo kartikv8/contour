@@ -118,17 +118,6 @@ export default function GeofenceBuilderPage() {
     );
   };
 
-  const handleDeleteSelected = () => {
-    if (selectedShapeIds.length === 0) {
-      return;
-    }
-
-    const remainingShapes = shapes.filter((shape) => !selectedShapeIds.includes(shape.id));
-    setShapes(remainingShapes);
-    setSelectedShapeIds([]);
-    setSyncRevision((previous) => previous + 1);
-  };
-
   const handleClearSelected = () => {
     if (selectedShapeIds.length === 0) {
       return;
@@ -163,7 +152,6 @@ export default function GeofenceBuilderPage() {
           onCopyShape={handleCopyShape}
           onCopyCombined={handleCopyCombined}
           onToggleShape={handleToggleShape}
-          onDeleteSelected={handleDeleteSelected}
           onClearSelected={handleClearSelected}
         />
       </aside>

@@ -16,7 +16,6 @@ type ExportWktPanelProps = {
   onCopyShape: (shapeId: string) => void;
   onCopyCombined: () => void;
   onToggleShape: (shapeId: string) => void;
-  onDeleteSelected: () => void;
   onClearSelected: () => void;
 };
 
@@ -30,7 +29,6 @@ export function ExportWktPanel({
   onCopyShape,
   onCopyCombined,
   onToggleShape,
-  onDeleteSelected,
   onClearSelected,
 }: ExportWktPanelProps) {
   const hasSelected = shapeExports.some((shape) => shape.selected);
@@ -51,10 +49,7 @@ export function ExportWktPanel({
         ))}
       </select>
 
-      <div className="panel-actions toolbar-row">
-        <button type="button" disabled={!hasSelected} onClick={onDeleteSelected}>
-          Delete selected
-        </button>
+      <div className="panel-actions">
         <button type="button" disabled={!hasSelected} onClick={onClearSelected}>
           Clear selected
         </button>
