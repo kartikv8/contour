@@ -1,6 +1,7 @@
 export type MapStyleKey = "streets" | "satellite";
 
 export const DEFAULT_MAP_STYLE: MapStyleKey = "streets";
+export const HAS_MAPBOX_TOKEN = Boolean(process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN);
 
 const MAPBOX_STREETS_STYLE_ID = "mapbox/streets-v12";
 const MAPBOX_SATELLITE_STYLE_ID = "mapbox/satellite-streets-v12";
@@ -10,10 +11,10 @@ function buildMapboxStyleUrl(styleId: string, accessToken: string): string {
 }
 
 export function getMapStyleUrl(styleKey: MapStyleKey): string {
-  const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
-  if (!token) {
+  if (!HAS_MAPBOX_TOKEN) {
     return "https://demotiles.maplibre.org/style.json";
   }
+  const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN as string;
 
   if (styleKey === "satellite") {
     return buildMapboxStyleUrl(MAPBOX_SATELLITE_STYLE_ID, token);

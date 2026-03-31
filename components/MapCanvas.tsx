@@ -5,7 +5,7 @@ import type { Map } from "maplibre-gl";
 import { EditorMode } from "../lib/geometry/types";
 import { fitMapToMultiPolygon, initMap } from "../lib/map/initMap";
 import { initDrawSeam, DrawSeam } from "../lib/map/initDraw";
-import { DEFAULT_MAP_STYLE, MapStyleKey } from "../lib/map/styles";
+import { DEFAULT_MAP_STYLE, HAS_MAPBOX_TOKEN, MapStyleKey } from "../lib/map/styles";
 
 type CursorCoords = { lng: number; lat: number };
 
@@ -192,6 +192,10 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
   }, [syncRevision, importedGeometry, onDrawPolygonsChange]);
 
   const handleStyleChange = async (nextStyle: MapStyleKey) => {
+    if (!HAS_MAPBOX_TOKEN) {
+      return;
+    }
+
     if (nextStyle === mapStyleRef.current) {
       return;
     }
@@ -211,22 +215,26 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
   return (
     <div className="map-canvas-shell">
       <div ref={mapContainerRef} className="map-canvas" aria-label="Live MapLibre map" />
-      <div className="map-style-toggle" role="group" aria-label="Map style">
-        <button
-          type="button"
-          className={mapStyle === "streets" ? "map-style-button active" : "map-style-button"}
-          onClick={() => void handleStyleChange("streets")}
-        >
-          Streets
-        </button>
-        <button
-          type="button"
-          className={mapStyle === "satellite" ? "map-style-button active" : "map-style-button"}
-          onClick={() => void handleStyleChange("satellite")}
-        >
-          Satellite
-        </button>
-      </div>
+      {HAS_MAPBOX_TOKEN ? (
+        <div className="map-style-toggle" role="group" aria-label="Map style">
+          <button
+            type="button"
+            className={mapStyle === "streets" ? "map-style-button active" : "map-style-button"}
+            onClick={() => void handleStyleChange("streets")}
+          >
+            Streets
+          </button>
+          <button
+            type="button"
+            className={mapStyle === "satellite" ? "map-style-button active" : "map-style-button"}
+            onClick={() => void handleStyleChange("satellite")}
+          >
+            Satellite
+          </button>
+        </div>
+      ) : (
+        <div className="map-style-fallback-notice">Default map mode (set NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN for styles).</div>
+      )}
       <div className="map-cursor-readout" aria-live="polite">
         {cursor ? `Lng ${cursor.lng.toFixed(6)} | Lat ${cursor.lat.toFixed(6)}` : "Move cursor over map"}
       </div>

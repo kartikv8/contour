@@ -132,6 +132,18 @@ body {
   color: #1e3a8a;
 }
 
+.map-style-fallback-notice {
+  position: absolute;
+  top: 52px;
+  left: 12px;
+  z-index: 10;
+  background: rgba(17, 24, 39, 0.86);
+  color: #f9fafb;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  padding: 0.35rem 0.5rem;
+}
+
 
 .toolbar-row {
   display: flex;
