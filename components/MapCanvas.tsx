@@ -23,6 +23,7 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
   const importedGeometryRef = useRef<GeoJSON.MultiPolygon | null>(importedGeometry);
   const syncRevisionRef = useRef<number>(syncRevision);
   const appliedSyncRevisionRef = useRef<number>(0);
+  const isImportHydratingRef = useRef<boolean>(false);
   const [cursor, setCursor] = useState<CursorCoords>();
 
   useEffect(() => {
@@ -61,15 +62,28 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
       draw.setMode(modeRef.current);
 
       unsubscribeDrawChanges = draw.subscribeToChanges(() => {
-        onDrawPolygonsChange(draw.getPolygons());
+        const polygons = draw.getPolygons();
+        if (isImportHydratingRef.current && polygons.length === 0) {
+          return;
+        }
+        onDrawPolygonsChange(polygons);
       });
 
       const currentImported = importedGeometryRef.current;
       if (currentImported && syncRevisionRef.current > 0) {
         appliedSyncRevisionRef.current = syncRevisionRef.current;
-        draw.replaceWithMultiPolygon(currentImported);
+        try {
+          isImportHydratingRef.current = true;
+          const hydratedPolygons = draw.replaceWithMultiPolygon(currentImported);
+          if (hydratedPolygons.length > 0) {
+            onDrawPolygonsChange(hydratedPolygons);
+          }
+        } catch (error) {
+          console.error("[DRAW_HYDRATE] replaceWithMultiPolygon failed in style-ready path", error);
+        } finally {
+          isImportHydratingRef.current = false;
+        }
         fitMapToMultiPolygon(map, currentImported);
-        onDrawPolygonsChange(draw.getPolygons());
       }
     };
 
@@ -140,12 +154,21 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
       return;
     }
 
-    drawRef.current.replaceWithMultiPolygon(importedGeometry);
+    try {
+      isImportHydratingRef.current = true;
+      const hydratedPolygons = drawRef.current.replaceWithMultiPolygon(importedGeometry);
+      if (hydratedPolygons.length > 0) {
+        onDrawPolygonsChange(hydratedPolygons);
+      }
+    } catch (error) {
+      console.error("[DRAW_HYDRATE] replaceWithMultiPolygon failed in import sync effect", error);
+    } finally {
+      isImportHydratingRef.current = false;
+    }
     const map = mapRef.current;
     if (map) {
       fitMapToMultiPolygon(map, importedGeometry);
     }
-    onDrawPolygonsChange(drawRef.current.getPolygons());
   }, [syncRevision, importedGeometry, onDrawPolygonsChange]);
 
   return (
