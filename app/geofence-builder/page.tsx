@@ -37,7 +37,6 @@ export default function GeofenceBuilderPage() {
 
   const combinedGeometry = useMemo(() => toMultiPolygonFromShapes(shapes), [shapes]);
 
-
   const shapeExports = useMemo(() => {
     return shapes.map((shape, index) => {
       const shapeGeometry: GeoJSON.MultiPolygon = {
