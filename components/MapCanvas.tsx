@@ -11,29 +11,18 @@ type CursorCoords = { lng: number; lat: number };
 type MapCanvasProps = {
   mode: EditorMode;
   importedGeometry: GeoJSON.MultiPolygon | null;
-  importRevision: number;
-  clearRevision: number;
-  deleteSelectedRevision: number;
+  syncRevision: number;
   onDrawPolygonsChange: (polygons: GeoJSON.Polygon[]) => void;
 };
 
-export function MapCanvas({
-  mode,
-  importedGeometry,
-  importRevision,
-  clearRevision,
-  deleteSelectedRevision,
-  onDrawPolygonsChange,
-}: MapCanvasProps) {
+export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygonsChange }: MapCanvasProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const drawRef = useRef<DrawSeam | null>(null);
   const modeRef = useRef<EditorMode>(mode);
   const importedGeometryRef = useRef<GeoJSON.MultiPolygon | null>(importedGeometry);
-  const importRevisionRef = useRef<number>(importRevision);
-  const appliedImportRevisionRef = useRef<number>(0);
-  const appliedClearRevisionRef = useRef<number>(0);
-  const appliedDeleteRevisionRef = useRef<number>(0);
+  const syncRevisionRef = useRef<number>(syncRevision);
+  const appliedSyncRevisionRef = useRef<number>(0);
   const [cursor, setCursor] = useState<CursorCoords>();
 
   useEffect(() => {
@@ -45,8 +34,8 @@ export function MapCanvas({
   }, [importedGeometry]);
 
   useEffect(() => {
-    importRevisionRef.current = importRevision;
-  }, [importRevision]);
+    syncRevisionRef.current = syncRevision;
+  }, [syncRevision]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -76,8 +65,8 @@ export function MapCanvas({
       });
 
       const currentImported = importedGeometryRef.current;
-      if (currentImported && importRevisionRef.current > 0) {
-        appliedImportRevisionRef.current = importRevisionRef.current;
+      if (currentImported && syncRevisionRef.current > 0) {
+        appliedSyncRevisionRef.current = syncRevisionRef.current;
         draw.replaceWithMultiPolygon(currentImported);
         fitMapToMultiPolygon(map, currentImported);
         onDrawPolygonsChange(draw.getPolygons());
@@ -135,42 +124,29 @@ export function MapCanvas({
   }, [mode]);
 
   useEffect(() => {
-    if (!drawRef.current || !importedGeometry) {
+    if (!drawRef.current) {
       return;
     }
 
-    if (importRevision <= appliedImportRevisionRef.current) {
+    if (syncRevision <= appliedSyncRevisionRef.current) {
       return;
     }
 
-    appliedImportRevisionRef.current = importRevision;
+    appliedSyncRevisionRef.current = syncRevision;
+
+    if (!importedGeometry) {
+      drawRef.current.clearAll();
+      onDrawPolygonsChange([]);
+      return;
+    }
+
     drawRef.current.replaceWithMultiPolygon(importedGeometry);
     const map = mapRef.current;
     if (map) {
       fitMapToMultiPolygon(map, importedGeometry);
     }
     onDrawPolygonsChange(drawRef.current.getPolygons());
-  }, [importRevision, importedGeometry, onDrawPolygonsChange]);
-
-  useEffect(() => {
-    if (!drawRef.current || clearRevision <= appliedClearRevisionRef.current) {
-      return;
-    }
-
-    appliedClearRevisionRef.current = clearRevision;
-    drawRef.current.clearAll();
-    onDrawPolygonsChange([]);
-  }, [clearRevision, onDrawPolygonsChange]);
-
-  useEffect(() => {
-    if (!drawRef.current || deleteSelectedRevision <= appliedDeleteRevisionRef.current) {
-      return;
-    }
-
-    appliedDeleteRevisionRef.current = deleteSelectedRevision;
-    drawRef.current.deleteSelected();
-    onDrawPolygonsChange(drawRef.current.getPolygons());
-  }, [deleteSelectedRevision, onDrawPolygonsChange]);
+  }, [syncRevision, importedGeometry, onDrawPolygonsChange]);
 
   return (
     <div className="map-canvas-shell">

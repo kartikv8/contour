@@ -5,51 +5,39 @@ type ShapeExportEntry = {
   wkt: string;
   valid: boolean;
   errors: ValidationIssue[];
+  selected: boolean;
 };
 
-type ImportExportPanelProps = {
-  wktInput: string;
-  importError: string | null;
+type ExportWktPanelProps = {
   precision: number;
   shapeExports: ShapeExportEntry[];
   combinedWkt: string;
-  onWktInputChange: (value: string) => void;
-  onImportWkt: () => void;
   onPrecisionChange: (precision: number) => void;
   onCopyShape: (shapeId: string) => void;
   onCopyCombined: () => void;
+  onToggleShape: (shapeId: string) => void;
+  onDeleteSelected: () => void;
+  onClearSelected: () => void;
 };
 
 const PRECISION_OPTIONS = [5, 6, 7, 8];
 
-export function ImportExportPanel({
-  wktInput,
-  importError,
+export function ExportWktPanel({
   precision,
   shapeExports,
   combinedWkt,
-  onWktInputChange,
-  onImportWkt,
   onPrecisionChange,
   onCopyShape,
   onCopyCombined,
-}: ImportExportPanelProps) {
-  return (
-    <section className="panel" aria-label="Import and export panel">
-      <h2>Import / Export</h2>
-      <textarea
-        className="text-area"
-        placeholder="Paste POLYGON(...) or MULTIPOLYGON(...)"
-        value={wktInput}
-        onChange={(event) => onWktInputChange(event.target.value)}
-      />
-      <div className="panel-actions">
-        <button type="button" onClick={onImportWkt}>
-          Import WKT
-        </button>
-      </div>
-      {importError ? <p className="error-text">{importError}</p> : null}
+  onToggleShape,
+  onDeleteSelected,
+  onClearSelected,
+}: ExportWktPanelProps) {
+  const hasSelected = shapeExports.some((shape) => shape.selected);
 
+  return (
+    <section className="panel" aria-label="Export WKT panel">
+      <h2>Export WKT</h2>
       <label htmlFor="precision">Export precision</label>
       <select
         id="precision"
@@ -63,11 +51,26 @@ export function ImportExportPanel({
         ))}
       </select>
 
-      <h3>Per-shape WKT</h3>
+      <div className="panel-actions toolbar-row">
+        <button type="button" disabled={!hasSelected} onClick={onDeleteSelected}>
+          Delete selected
+        </button>
+        <button type="button" disabled={!hasSelected} onClick={onClearSelected}>
+          Clear selected
+        </button>
+      </div>
+
       {shapeExports.length === 0 ? <p className="muted">Draw or import shapes to export.</p> : null}
       {shapeExports.map((entry, index) => (
         <div key={entry.id} className="shape-export-row">
-          <p className="shape-export-title">Shape {index + 1}</p>
+          <label className="shape-export-title">
+            <input
+              type="checkbox"
+              checked={entry.selected}
+              onChange={() => onToggleShape(entry.id)}
+            />{" "}
+            Shape {index + 1}
+          </label>
           <textarea className="text-area" readOnly value={entry.wkt} />
           <div className="panel-actions">
             <button type="button" disabled={!entry.valid} onClick={() => onCopyShape(entry.id)}>
@@ -85,15 +88,15 @@ export function ImportExportPanel({
       ))}
 
       {combinedWkt ? (
-        <>
-          <h3>Combined MULTIPOLYGON</h3>
+        <div className="shape-export-row">
+          <p className="shape-export-title">Combined MULTIPOLYGON</p>
           <textarea className="text-area" readOnly value={combinedWkt} />
           <div className="panel-actions">
             <button type="button" onClick={onCopyCombined}>
               Copy combined WKT
             </button>
           </div>
-        </>
+        </div>
       ) : null}
     </section>
   );

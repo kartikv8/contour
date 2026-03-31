@@ -17,14 +17,12 @@ export type DrawSeam = {
   getPolygons: () => Polygon[];
   replaceWithMultiPolygon: (geometry: GeoJSON.MultiPolygon) => void;
   clearAll: () => void;
-  deleteSelected: () => number;
   cleanup: () => void;
 };
 
-function toPolygonFeature(rings: [number, number][][], index: number): GeoJSONStoreFeatures {
+function toPolygonFeature(rings: [number, number][][]): GeoJSONStoreFeatures {
   return {
     type: "Feature",
-    id: `imported-${index}`,
     properties: { mode: "polygon" },
     geometry: {
       type: "Polygon",
@@ -72,7 +70,7 @@ export function initDrawSeam(map: Map): DrawSeam {
 
   const replaceWithMultiPolygon = (geometry: GeoJSON.MultiPolygon) => {
     draw.clear();
-    const features = geometry.coordinates.map((rings, index) => toPolygonFeature(rings as [number, number][][], index));
+    const features = geometry.coordinates.map((rings) => toPolygonFeature(rings as [number, number][][]));
     if (features.length > 0) {
       draw.addFeatures(features);
     }
@@ -83,23 +81,9 @@ export function initDrawSeam(map: Map): DrawSeam {
     draw.clear();
   };
 
-  const deleteSelected = () => {
-    const selectedIds = draw
-      .getSnapshot()
-      .filter((feature) => Boolean((feature.properties as { selected?: boolean } | undefined)?.selected))
-      .map((feature) => feature.id)
-      .filter((id): id is string | number => id !== undefined && id !== null);
-
-    if (selectedIds.length > 0) {
-      draw.removeFeatures(selectedIds);
-    }
-
-    return selectedIds.length;
-  };
-
   const cleanup = () => {
     draw.stop();
   };
 
-  return { draw, setMode, subscribeToChanges, getPolygons, replaceWithMultiPolygon, clearAll, deleteSelected, cleanup };
+  return { draw, setMode, subscribeToChanges, getPolygons, replaceWithMultiPolygon, clearAll, cleanup };
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { ImportExportPanel } from "../../components/ImportExportPanel";
+import { ExportWktPanel } from "../../components/ExportWktPanel";
+import { ImportWktPanel } from "../../components/ImportWktPanel";
 import { MapCanvas } from "../../components/MapCanvas";
 import { Toolbar } from "../../components/Toolbar";
 import { normalizeAnySupportedGeometryToMultiPolygon } from "../../lib/geometry/normalize";
@@ -28,14 +29,14 @@ function toMultiPolygonFromShapes(shapes: ShapeEntry[]): GeoJSON.MultiPolygon | 
 export default function GeofenceBuilderPage() {
   const [mode, setMode] = useState<EditorMode>("select");
   const [shapes, setShapes] = useState<ShapeEntry[]>([]);
+  const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
   const [precision, setPrecision] = useState<number>(6);
   const [wktInput, setWktInput] = useState<string>("");
   const [importError, setImportError] = useState<string | null>(null);
-  const [importRevision, setImportRevision] = useState<number>(0);
-  const [clearRevision, setClearRevision] = useState<number>(0);
-  const [deleteSelectedRevision, setDeleteSelectedRevision] = useState<number>(0);
+  const [syncRevision, setSyncRevision] = useState<number>(0);
 
   const combinedGeometry = useMemo(() => toMultiPolygonFromShapes(shapes), [shapes]);
+
 
   const shapeExports = useMemo(() => {
     return shapes.map((shape, index) => {
@@ -49,11 +50,12 @@ export default function GeofenceBuilderPage() {
         id: shape.id,
         valid: validation.valid,
         errors: validation.errors,
+        selected: selectedShapeIds.includes(shape.id),
         wkt: validation.valid ? toWktMultiPolygon(shapeGeometry, precision) : "",
         index,
       };
     });
-  }, [precision, shapes]);
+  }, [precision, selectedShapeIds, shapes]);
 
   const combinedWkt = useMemo(() => {
     if (!combinedGeometry) {
@@ -83,7 +85,8 @@ export default function GeofenceBuilderPage() {
       }));
 
       setShapes(importedShapes);
-      setImportRevision((previous) => previous + 1);
+      setSelectedShapeIds([]);
+      setSyncRevision((previous) => previous + 1);
       setImportError(null);
       setMode("select");
     } catch (error) {
@@ -109,30 +112,59 @@ export default function GeofenceBuilderPage() {
     await navigator.clipboard.writeText(combinedWkt);
   };
 
+  const handleToggleShape = (shapeId: string) => {
+    setSelectedShapeIds((previous) =>
+      previous.includes(shapeId) ? previous.filter((id) => id !== shapeId) : [...previous, shapeId],
+    );
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedShapeIds.length === 0) {
+      return;
+    }
+
+    const remainingShapes = shapes.filter((shape) => !selectedShapeIds.includes(shape.id));
+    setShapes(remainingShapes);
+    setSelectedShapeIds([]);
+    setSyncRevision((previous) => previous + 1);
+  };
+
+  const handleClearSelected = () => {
+    if (selectedShapeIds.length === 0) {
+      return;
+    }
+
+    const remainingShapes = shapes.filter((shape) => !selectedShapeIds.includes(shape.id));
+    setShapes(remainingShapes);
+    setSelectedShapeIds([]);
+    setSyncRevision((previous) => previous + 1);
+  };
+
   return (
     <main className="builder-shell">
       <aside className="builder-left-pane">
         <h1>Geofence Builder</h1>
         <p className="muted">Draw, import, and export per-shape WKT.</p>
 
-        <Toolbar
-          mode={mode}
-          onModeChange={setMode}
-          onDeleteSelected={() => setDeleteSelectedRevision((previous) => previous + 1)}
-          onClearAll={() => setClearRevision((previous) => previous + 1)}
-        />
+        <Toolbar mode={mode} onModeChange={setMode} />
 
-        <ImportExportPanel
+        <ImportWktPanel
           wktInput={wktInput}
           importError={importError}
+          onWktInputChange={setWktInput}
+          onImportWkt={handleImportWkt}
+        />
+
+        <ExportWktPanel
           precision={precision}
           shapeExports={shapeExports}
           combinedWkt={combinedWkt}
-          onWktInputChange={setWktInput}
-          onImportWkt={handleImportWkt}
           onPrecisionChange={setPrecision}
           onCopyShape={handleCopyShape}
           onCopyCombined={handleCopyCombined}
+          onToggleShape={handleToggleShape}
+          onDeleteSelected={handleDeleteSelected}
+          onClearSelected={handleClearSelected}
         />
       </aside>
 
@@ -140,9 +172,7 @@ export default function GeofenceBuilderPage() {
         <MapCanvas
           mode={mode}
           importedGeometry={combinedGeometry}
-          importRevision={importRevision}
-          clearRevision={clearRevision}
-          deleteSelectedRevision={deleteSelectedRevision}
+          syncRevision={syncRevision}
           onDrawPolygonsChange={handleDrawPolygonsChange}
         />
       </section>
