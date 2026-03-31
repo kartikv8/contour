@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExportWktPanel } from "../../components/ExportWktPanel";
 import { ImportWktPanel } from "../../components/ImportWktPanel";
 import { MapCanvas } from "../../components/MapCanvas";
@@ -37,6 +37,19 @@ export default function GeofenceBuilderPage() {
 
   const combinedGeometry = useMemo(() => toMultiPolygonFromShapes(shapes), [shapes]);
 
+  useEffect(() => {
+    console.log("[SHAPES_STATE] shapes updated", {
+      shapeCount: shapes.length,
+      shapes: shapes.map((shape) => ({
+        id: shape.id,
+        polygonRingCount: shape.polygon.coordinates.length,
+      })),
+    });
+  }, [shapes]);
+
+  useEffect(() => {
+    console.log("[SHAPES_STATE] syncRevision changed", { syncRevision });
+  }, [syncRevision]);
 
   const shapeExports = useMemo(() => {
     return shapes.map((shape, index) => {
@@ -77,12 +90,28 @@ export default function GeofenceBuilderPage() {
 
   const handleImportWkt = () => {
     try {
+      console.log("[WKT_IMPORT] raw WKT input received", { wktInput });
       const imported = fromWktToMultiPolygon(wktInput);
+      console.log("[WKT_IMPORT] parsed geometry", {
+        geometryType: imported.type,
+        polygonCount: imported.coordinates.length,
+      });
       const normalized = normalizeAnySupportedGeometryToMultiPolygon(imported);
+      console.log("[WKT_IMPORT] normalized MultiPolygon", {
+        geometryType: normalized.type,
+        polygonCount: normalized.coordinates.length,
+        coordinateCountByPolygon: normalized.coordinates.map((polygon) =>
+          polygon.reduce((acc, ring) => acc + ring.length, 0),
+        ),
+      });
       const importedShapes = normalized.coordinates.map((polygon, index) => ({
         id: `imported-${Date.now()}-${index + 1}`,
         polygon: { type: "Polygon" as const, coordinates: polygon },
       }));
+      console.log("[WKT_IMPORT] resulting ShapeEntry[]", {
+        shapeCount: importedShapes.length,
+        shapeIds: importedShapes.map((shape) => shape.id),
+      });
 
       setShapes(importedShapes);
       setSelectedShapeIds([]);

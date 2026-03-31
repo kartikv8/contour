@@ -70,12 +70,53 @@ export function initDrawSeam(map: Map): DrawSeam {
   };
 
   const replaceWithMultiPolygon = (geometry: GeoJSON.MultiPolygon) => {
-    draw.clear();
-    const features = geometry.coordinates.map((rings) => toPolygonFeature(draw.getFeatureId(), rings as [number, number][][]));
-    if (features.length > 0) {
-      draw.addFeatures(features);
+    try {
+      console.log("[DRAW_HYDRATE] replaceWithMultiPolygon called", {
+        polygonCount: geometry.coordinates.length,
+      });
+
+      console.log("[DRAW_HYDRATE] before draw.clear()");
+      draw.clear();
+
+      const features = geometry.coordinates.map((rings, polygonIndex) => {
+        const featureId = draw.getFeatureId();
+        const feature = toPolygonFeature(featureId, rings as [number, number][][]);
+
+        console.log("[DRAW_HYDRATE] generated TerraDraw feature", {
+          polygonIndex,
+          feature,
+          featureId: feature.id,
+          mode: feature.properties.mode,
+          geometryType: feature.geometry.type,
+          ringCount: rings.length,
+          coordinateCountByRing: rings.map((ring) => ring.length),
+        });
+
+        return feature;
+      });
+
+      if (features.length > 0) {
+        console.log("[DRAW_HYDRATE] before draw.addFeatures(...)", {
+          featureCount: features.length,
+          featureIds: features.map((feature) => feature.id),
+        });
+        const addResults = draw.addFeatures(features);
+        console.log("[DRAW_HYDRATE] draw.addFeatures(...) result", { addResults });
+      }
+
+      const snapshot = draw.getSnapshot();
+      console.log("[DRAW_HYDRATE] draw snapshot immediately after hydration", {
+        snapshotFeatureCount: snapshot.length,
+        polygonFeatureCount: snapshot.filter((feature) => feature.geometry.type === "Polygon").length,
+        allGeometryTypes: snapshot.map((feature) => feature.geometry.type),
+      });
+
+      draw.setMode("select");
+      console.log("[DRAW_HYDRATE] active mode after hydration", { mode: draw.getMode() });
+    } catch (error) {
+      console.error("[DRAW_HYDRATE] replaceWithMultiPolygon exception", error);
+      throw error;
     }
-    draw.setMode("select");
   };
 
   const clearAll = () => {
