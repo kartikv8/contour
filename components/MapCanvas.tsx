@@ -5,6 +5,7 @@ import type { Map } from "maplibre-gl";
 import { EditorMode } from "../lib/geometry/types";
 import { fitMapToMultiPolygon, initMap } from "../lib/map/initMap";
 import { initDrawSeam, DrawSeam } from "../lib/map/initDraw";
+import { DEFAULT_MAP_STYLE, HAS_MAPBOX_TOKEN, MapStyleKey } from "../lib/map/styles";
 
 type CursorCoords = { lng: number; lat: number };
 
@@ -25,6 +26,11 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
   const appliedSyncRevisionRef = useRef<number>(0);
   const isImportHydratingRef = useRef<boolean>(false);
   const [cursor, setCursor] = useState<CursorCoords>();
+  const [mapStyle, setMapStyle] = useState<MapStyleKey>(DEFAULT_MAP_STYLE);
+  const mapStyleRef = useRef<MapStyleKey>(DEFAULT_MAP_STYLE);
+  const setMapStyleRef = useRef<((styleKey: MapStyleKey) => Promise<void>) | null>(null);
+  const unsubscribeDrawChangesRef = useRef<(() => void) | null>(null);
+  const reinitializeDrawRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -39,29 +45,37 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
   }, [syncRevision]);
 
   useEffect(() => {
+    mapStyleRef.current = mapStyle;
+  }, [mapStyle]);
+
+  useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
       return;
     }
 
-    const { map, cleanup: mapCleanup, resetView } = initMap({
+    const { map, setMapStyle: setMapStyleOnMap, cleanup: mapCleanup, resetView } = initMap({
       container: mapContainerRef.current,
+      styleKey: mapStyleRef.current,
       onCursorMove: (coords) => {
         setCursor(coords);
       },
     });
+    setMapStyleRef.current = setMapStyleOnMap;
 
-    let unsubscribeDrawChanges: (() => void) | null = null;
-
-    const startDrawWhenStyleReady = () => {
-      if (drawRef.current) {
-        return;
+    const createDrawForLoadedStyle = () => {
+      if (unsubscribeDrawChangesRef.current) {
+        unsubscribeDrawChangesRef.current();
+        unsubscribeDrawChangesRef.current = null;
       }
-
+      if (drawRef.current) {
+        drawRef.current.cleanup();
+        drawRef.current = null;
+      }
       const draw = initDrawSeam(map);
       drawRef.current = draw;
       draw.setMode(modeRef.current);
 
-      unsubscribeDrawChanges = draw.subscribeToChanges(() => {
+      unsubscribeDrawChangesRef.current = draw.subscribeToChanges(() => {
         const polygons = draw.getPolygons();
         if (isImportHydratingRef.current && polygons.length === 0) {
           return;
@@ -70,8 +84,10 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
       });
 
       const currentImported = importedGeometryRef.current;
-      if (currentImported && syncRevisionRef.current > 0) {
-        appliedSyncRevisionRef.current = syncRevisionRef.current;
+      if (currentImported) {
+        if (syncRevisionRef.current > 0) {
+          appliedSyncRevisionRef.current = syncRevisionRef.current;
+        }
         try {
           isImportHydratingRef.current = true;
           const hydratedPolygons = draw.replaceWithMultiPolygon(currentImported);
@@ -86,11 +102,12 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
         fitMapToMultiPolygon(map, currentImported);
       }
     };
+    reinitializeDrawRef.current = createDrawForLoadedStyle;
 
     if (map.isStyleLoaded()) {
-      startDrawWhenStyleReady();
+      createDrawForLoadedStyle();
     } else {
-      map.on("load", startDrawWhenStyleReady);
+      map.on("load", createDrawForLoadedStyle);
     }
 
     const resetButton = document.createElement("button");
@@ -103,9 +120,10 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
     mapRef.current = map;
 
     return () => {
-      map.off("load", startDrawWhenStyleReady);
-      if (unsubscribeDrawChanges) {
-        unsubscribeDrawChanges();
+      map.off("load", createDrawForLoadedStyle);
+      if (unsubscribeDrawChangesRef.current) {
+        unsubscribeDrawChangesRef.current();
+        unsubscribeDrawChangesRef.current = null;
       }
       resetButton.removeEventListener("click", resetView);
       resetButton.remove();
@@ -114,6 +132,8 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
       }
       drawRef.current = null;
       mapRef.current = null;
+      setMapStyleRef.current = null;
+      reinitializeDrawRef.current = null;
       mapCleanup();
     };
   }, [onDrawPolygonsChange]);
@@ -171,9 +191,50 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
     }
   }, [syncRevision, importedGeometry, onDrawPolygonsChange]);
 
+  const handleStyleChange = async (nextStyle: MapStyleKey) => {
+    if (!HAS_MAPBOX_TOKEN) {
+      return;
+    }
+
+    if (nextStyle === mapStyleRef.current) {
+      return;
+    }
+
+    const map = mapRef.current;
+    const setMapStyleOnMap = setMapStyleRef.current;
+    if (!map || !setMapStyleOnMap) {
+      return;
+    }
+
+    setMapStyle(nextStyle);
+
+    await setMapStyleOnMap(nextStyle);
+    reinitializeDrawRef.current?.();
+  };
+
   return (
     <div className="map-canvas-shell">
       <div ref={mapContainerRef} className="map-canvas" aria-label="Live MapLibre map" />
+      {HAS_MAPBOX_TOKEN ? (
+        <div className="map-style-toggle" role="group" aria-label="Map style">
+          <button
+            type="button"
+            className={mapStyle === "streets" ? "map-style-button active" : "map-style-button"}
+            onClick={() => void handleStyleChange("streets")}
+          >
+            Streets
+          </button>
+          <button
+            type="button"
+            className={mapStyle === "satellite" ? "map-style-button active" : "map-style-button"}
+            onClick={() => void handleStyleChange("satellite")}
+          >
+            Satellite
+          </button>
+        </div>
+      ) : (
+        <div className="map-style-fallback-notice">Default map mode (set NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN for styles).</div>
+      )}
       <div className="map-cursor-readout" aria-live="polite">
         {cursor ? `Lng ${cursor.lng.toFixed(6)} | Lat ${cursor.lat.toFixed(6)}` : "Move cursor over map"}
       </div>
