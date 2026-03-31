@@ -102,6 +102,36 @@ body {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
+.map-style-toggle {
+  position: absolute;
+  top: 52px;
+  left: 12px;
+  z-index: 10;
+  display: inline-flex;
+  gap: 0.35rem;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0.25rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.map-style-button {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 0.3rem 0.45rem;
+}
+
+.map-style-button.active {
+  border-color: #1d4ed8;
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
 
 .toolbar-row {
   display: flex;
