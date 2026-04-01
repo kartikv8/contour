@@ -14,8 +14,9 @@ export type DrawSeam = {
   draw: TerraDraw;
   setMode: (mode: EditorMode) => void;
   subscribeToChanges: (onChange: () => void) => () => void;
-  getPolygons: () => Polygon[];
-  replaceWithMultiPolygon: (geometry: GeoJSON.MultiPolygon) => Polygon[];
+  subscribeToSelection: (handlers: { onSelect?: (id: string) => void; onDeselect?: (id: string) => void }) => () => void;
+  getPolygonFeatures: () => Array<{ id: string; polygon: Polygon }>;
+  replaceWithMultiPolygon: (geometry: GeoJSON.MultiPolygon) => Array<{ id: string; polygon: Polygon }>;
   clearAll: () => void;
   cleanup: () => void;
 };
@@ -43,12 +44,35 @@ function toPolygonFeature(id: string | number, rings: [number, number][][]): Geo
   } as GeoJSONStoreFeatures;
 }
 
+function toShapeId(featureId: string | number): string {
+  return String(featureId);
+}
+
 export function initDrawSeam(map: Map): DrawSeam {
   const adapter = new TerraDrawMapLibreGLAdapter({ map });
 
   const draw = new TerraDraw({
     adapter,
-    modes: [new TerraDrawSelectMode(), new TerraDrawPolygonMode(), new TerraDrawRectangleMode()],
+    modes: [
+      new TerraDrawSelectMode({
+        flags: {
+          polygon: {
+            feature: {
+              draggable: false,
+              rotateable: false,
+              scaleable: false,
+              selfIntersectable: false,
+              coordinates: {
+                draggable: true,
+                midpoints: { draggable: true },
+              },
+            },
+          },
+        },
+      }),
+      new TerraDrawPolygonMode(),
+      new TerraDrawRectangleMode(),
+    ],
   });
 
   draw.start();
@@ -72,15 +96,35 @@ export function initDrawSeam(map: Map): DrawSeam {
     };
   };
 
-  const getPolygons = (): Polygon[] => {
+  const subscribeToSelection = (handlers: {
+    onSelect?: (id: string) => void;
+    onDeselect?: (id: string) => void;
+  }): (() => void) => {
+    const selectListener = (id: string | number) => {
+      handlers.onSelect?.(toShapeId(id));
+    };
+    const deselectListener = (id: string | number) => {
+      handlers.onDeselect?.(toShapeId(id));
+    };
+
+    draw.on("select", selectListener);
+    draw.on("deselect", deselectListener);
+
+    return () => {
+      draw.off("select", selectListener);
+      draw.off("deselect", deselectListener);
+    };
+  };
+
+  const getPolygonFeatures = (): Array<{ id: string; polygon: Polygon }> => {
     const snapshot = draw.getSnapshot();
 
     return snapshot
-      .filter((feature) => feature.geometry.type === "Polygon")
-      .map((feature) => feature.geometry as Polygon);
+      .filter((feature) => feature.geometry.type === "Polygon" && feature.id !== undefined)
+      .map((feature) => ({ id: toShapeId(feature.id as string | number), polygon: feature.geometry as Polygon }));
   };
 
-  const replaceWithMultiPolygon = (geometry: GeoJSON.MultiPolygon): Polygon[] => {
+  const replaceWithMultiPolygon = (geometry: GeoJSON.MultiPolygon): Array<{ id: string; polygon: Polygon }> => {
     draw.clear();
 
     const features = geometry.coordinates.map((rings) =>
@@ -97,7 +141,7 @@ export function initDrawSeam(map: Map): DrawSeam {
     }
 
     draw.setMode("select");
-    return getPolygons();
+    return getPolygonFeatures();
   };
 
   const clearAll = () => {
@@ -108,5 +152,14 @@ export function initDrawSeam(map: Map): DrawSeam {
     draw.stop();
   };
 
-  return { draw, setMode, subscribeToChanges, getPolygons, replaceWithMultiPolygon, clearAll, cleanup };
+  return {
+    draw,
+    setMode,
+    subscribeToChanges,
+    subscribeToSelection,
+    getPolygonFeatures,
+    replaceWithMultiPolygon,
+    clearAll,
+    cleanup,
+  };
 }

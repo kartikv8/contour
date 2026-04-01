@@ -30,6 +30,7 @@ export default function GeofenceBuilderPage() {
   const [mode, setMode] = useState<EditorMode>("select");
   const [shapes, setShapes] = useState<ShapeEntry[]>([]);
   const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
+  const [activeShapeId, setActiveShapeId] = useState<string | null>(null);
   const [precision, setPrecision] = useState<number>(6);
   const [wktInput, setWktInput] = useState<string>("");
   const [importError, setImportError] = useState<string | null>(null);
@@ -69,8 +70,10 @@ export default function GeofenceBuilderPage() {
     return toWktMultiPolygon(combinedGeometry, precision);
   }, [combinedGeometry, precision]);
 
-  const handleDrawPolygonsChange = useCallback((polygons: GeoJSON.Polygon[]) => {
-    setShapes(polygons.map((polygon, index) => ({ id: `shape-${index + 1}`, polygon })));
+  const handleDrawPolygonsChange = useCallback((entries: Array<{ id: string; polygon: GeoJSON.Polygon }>) => {
+    setShapes(entries.map((entry) => ({ id: entry.id, polygon: entry.polygon })));
+    setSelectedShapeIds((previous) => previous.filter((shapeId) => entries.some((entry) => entry.id === shapeId)));
+    setActiveShapeId((previous) => (previous && entries.some((entry) => entry.id === previous) ? previous : null));
     setImportError(null);
   }, []);
 
@@ -85,6 +88,7 @@ export default function GeofenceBuilderPage() {
 
       setShapes(importedShapes);
       setSelectedShapeIds([]);
+      setActiveShapeId(null);
       setSyncRevision((previous) => previous + 1);
       setImportError(null);
       setMode("select");
@@ -125,6 +129,9 @@ export default function GeofenceBuilderPage() {
     const remainingShapes = shapes.filter((shape) => !selectedShapeIds.includes(shape.id));
     setShapes(remainingShapes);
     setSelectedShapeIds([]);
+    setActiveShapeId((previous) =>
+      previous && remainingShapes.some((shape) => shape.id === previous) ? previous : null,
+    );
     setSyncRevision((previous) => previous + 1);
   };
 
@@ -133,6 +140,7 @@ export default function GeofenceBuilderPage() {
       <aside className="builder-left-pane">
         <h1>Geofence Builder</h1>
         <p className="muted">Draw, import, and export per-shape WKT.</p>
+        <p className="muted">{activeShapeId ? `Active shape on map: ${activeShapeId}` : "No active map selection."}</p>
 
         <Toolbar mode={mode} onModeChange={setMode} />
 
@@ -161,6 +169,7 @@ export default function GeofenceBuilderPage() {
           importedGeometry={combinedGeometry}
           syncRevision={syncRevision}
           onDrawPolygonsChange={handleDrawPolygonsChange}
+          onActiveShapeChange={setActiveShapeId}
         />
       </section>
     </main>

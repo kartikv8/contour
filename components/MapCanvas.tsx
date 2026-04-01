@@ -12,10 +12,17 @@ type MapCanvasProps = {
   mode: EditorMode;
   importedGeometry: GeoJSON.MultiPolygon | null;
   syncRevision: number;
-  onDrawPolygonsChange: (polygons: GeoJSON.Polygon[]) => void;
+  onDrawPolygonsChange: (shapes: Array<{ id: string; polygon: GeoJSON.Polygon }>) => void;
+  onActiveShapeChange?: (shapeId: string | null) => void;
 };
 
-export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygonsChange }: MapCanvasProps) {
+export function MapCanvas({
+  mode,
+  importedGeometry,
+  syncRevision,
+  onDrawPolygonsChange,
+  onActiveShapeChange,
+}: MapCanvasProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const drawRef = useRef<DrawSeam | null>(null);
@@ -26,6 +33,7 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
   const isImportHydratingRef = useRef<boolean>(false);
   const [cursor, setCursor] = useState<CursorCoords>();
   const unsubscribeDrawChangesRef = useRef<(() => void) | null>(null);
+  const unsubscribeSelectionRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -56,6 +64,10 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
         unsubscribeDrawChangesRef.current();
         unsubscribeDrawChangesRef.current = null;
       }
+      if (unsubscribeSelectionRef.current) {
+        unsubscribeSelectionRef.current();
+        unsubscribeSelectionRef.current = null;
+      }
       if (drawRef.current) {
         drawRef.current.cleanup();
         drawRef.current = null;
@@ -65,11 +77,19 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
       draw.setMode(modeRef.current);
 
       unsubscribeDrawChangesRef.current = draw.subscribeToChanges(() => {
-        const polygons = draw.getPolygons();
+        const polygons = draw.getPolygonFeatures();
         if (isImportHydratingRef.current && polygons.length === 0) {
           return;
         }
         onDrawPolygonsChange(polygons);
+      });
+      unsubscribeSelectionRef.current = draw.subscribeToSelection({
+        onSelect: (shapeId) => {
+          onActiveShapeChange?.(shapeId);
+        },
+        onDeselect: () => {
+          onActiveShapeChange?.(null);
+        },
       });
 
       const currentImported = importedGeometryRef.current;
@@ -107,11 +127,15 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
 
     mapRef.current = map;
 
-    return () => {
+      return () => {
       map.off("load", createDrawForLoadedStyle);
       if (unsubscribeDrawChangesRef.current) {
         unsubscribeDrawChangesRef.current();
         unsubscribeDrawChangesRef.current = null;
+      }
+      if (unsubscribeSelectionRef.current) {
+        unsubscribeSelectionRef.current();
+        unsubscribeSelectionRef.current = null;
       }
       resetButton.removeEventListener("click", resetView);
       resetButton.remove();
@@ -122,7 +146,7 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
       mapRef.current = null;
       mapCleanup();
     };
-  }, [onDrawPolygonsChange]);
+  }, [onDrawPolygonsChange, onActiveShapeChange]);
 
   useEffect(() => {
     if (!drawRef.current) {
@@ -156,6 +180,7 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
 
     if (!importedGeometry) {
       drawRef.current.clearAll();
+      onActiveShapeChange?.(null);
       onDrawPolygonsChange([]);
       return;
     }
@@ -175,7 +200,7 @@ export function MapCanvas({ mode, importedGeometry, syncRevision, onDrawPolygons
     if (map) {
       fitMapToMultiPolygon(map, importedGeometry);
     }
-  }, [syncRevision, importedGeometry, onDrawPolygonsChange]);
+  }, [syncRevision, importedGeometry, onDrawPolygonsChange, onActiveShapeChange]);
 
   return (
     <div className="map-canvas-shell">
