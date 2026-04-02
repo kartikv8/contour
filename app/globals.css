@@ -150,3 +150,32 @@ body {
   font-weight: 600;
   margin: 0;
 }
+
+.warning-summary {
+  margin: 0.5rem 0;
+  color: #991b1b;
+  font-weight: 600;
+}
+
+.overlap-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.overlap-row {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #7f1d1d;
+  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.overlap-row.active {
+  border-color: #dc2626;
+  background: #fee2e2;
+  box-shadow: inset 0 0 0 1px #dc2626;
+}

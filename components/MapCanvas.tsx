@@ -1,12 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Map } from "maplibre-gl";
+import type { Feature, FeatureCollection, Polygon, MultiPolygon } from "geojson";
+import type { GeoJSONSource, Map } from "maplibre-gl";
+import { OverlapPair } from "../lib/geometry/overlap";
 import { EditorMode } from "../lib/geometry/types";
 import { fitMapToMultiPolygon, initMap } from "../lib/map/initMap";
 import { initDrawSeam, DrawSeam } from "../lib/map/initDraw";
 
 type CursorCoords = { lng: number; lat: number };
+
+const OVERLAP_SOURCE_ID = "overlap-regions";
+const OVERLAP_FILL_LAYER_ID = "overlap-regions-fill";
+const OVERLAP_LINE_LAYER_ID = "overlap-regions-line";
+const HIGHLIGHTED_SHAPES_SOURCE_ID = "highlighted-shapes";
+const HIGHLIGHTED_SHAPES_LINE_LAYER_ID = "highlighted-shapes-line";
 
 type MapCanvasProps = {
   mode: EditorMode;
@@ -14,7 +22,79 @@ type MapCanvasProps = {
   syncRevision: number;
   onDrawPolygonsChange: (shapes: Array<{ id: string; polygon: GeoJSON.Polygon }>) => void;
   onActiveShapeChange?: (shapeId: string | null) => void;
+  overlapPairs: OverlapPair[];
+  focusedOverlapGeometry: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  focusedOverlapPairKey: string | null;
+  focusedOverlapNonce: number;
+  highlightedShapePolygons: GeoJSON.Polygon[];
 };
+
+function toEmptyFeatureCollection(): FeatureCollection {
+  return { type: "FeatureCollection", features: [] };
+}
+
+function toMultiPolygonLikeGeometry(geometry: Polygon | MultiPolygon): GeoJSON.MultiPolygon {
+  if (geometry.type === "MultiPolygon") {
+    return geometry;
+  }
+
+  return {
+    type: "MultiPolygon",
+    coordinates: [geometry.coordinates],
+  };
+}
+
+function ensureOverlapLayers(map: Map) {
+  if (!map.getSource(OVERLAP_SOURCE_ID)) {
+    map.addSource(OVERLAP_SOURCE_ID, {
+      type: "geojson",
+      data: toEmptyFeatureCollection(),
+    });
+  }
+
+  if (!map.getLayer(OVERLAP_FILL_LAYER_ID)) {
+    map.addLayer({
+      id: OVERLAP_FILL_LAYER_ID,
+      type: "fill",
+      source: OVERLAP_SOURCE_ID,
+      paint: {
+        "fill-color": "#dc2626",
+        "fill-opacity": ["case", ["==", ["get", "active"], true], 0.45, 0.22],
+      },
+    });
+  }
+
+  if (!map.getLayer(OVERLAP_LINE_LAYER_ID)) {
+    map.addLayer({
+      id: OVERLAP_LINE_LAYER_ID,
+      type: "line",
+      source: OVERLAP_SOURCE_ID,
+      paint: {
+        "line-color": "#b91c1c",
+        "line-width": ["case", ["==", ["get", "active"], true], 3, 2],
+      },
+    });
+  }
+
+  if (!map.getSource(HIGHLIGHTED_SHAPES_SOURCE_ID)) {
+    map.addSource(HIGHLIGHTED_SHAPES_SOURCE_ID, {
+      type: "geojson",
+      data: toEmptyFeatureCollection(),
+    });
+  }
+
+  if (!map.getLayer(HIGHLIGHTED_SHAPES_LINE_LAYER_ID)) {
+    map.addLayer({
+      id: HIGHLIGHTED_SHAPES_LINE_LAYER_ID,
+      type: "line",
+      source: HIGHLIGHTED_SHAPES_SOURCE_ID,
+      paint: {
+        "line-color": "#f59e0b",
+        "line-width": 2,
+      },
+    });
+  }
+}
 
 export function MapCanvas({
   mode,
@@ -22,6 +102,11 @@ export function MapCanvas({
   syncRevision,
   onDrawPolygonsChange,
   onActiveShapeChange,
+  overlapPairs,
+  focusedOverlapGeometry,
+  focusedOverlapPairKey,
+  focusedOverlapNonce,
+  highlightedShapePolygons,
 }: MapCanvasProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
@@ -92,6 +177,8 @@ export function MapCanvas({
         },
       });
 
+      ensureOverlapLayers(map);
+
       const currentImported = importedGeometryRef.current;
       if (currentImported) {
         if (syncRevisionRef.current > 0) {
@@ -127,7 +214,7 @@ export function MapCanvas({
 
     mapRef.current = map;
 
-      return () => {
+    return () => {
       map.off("load", createDrawForLoadedStyle);
       if (unsubscribeDrawChangesRef.current) {
         unsubscribeDrawChangesRef.current();
@@ -166,6 +253,63 @@ export function MapCanvas({
       map.dragPan.disable();
     }
   }, [mode]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) {
+      return;
+    }
+
+    ensureOverlapLayers(map);
+
+    const source = map.getSource(OVERLAP_SOURCE_ID) as GeoJSONSource | undefined;
+    if (!source) {
+      return;
+    }
+
+    const features: Feature<Polygon | MultiPolygon>[] = overlapPairs.map((pair) => ({
+      type: "Feature",
+      properties: { pairKey: pair.pairKey, active: pair.pairKey === focusedOverlapPairKey },
+      geometry: pair.geometry,
+    }));
+
+    source.setData({ type: "FeatureCollection", features });
+  }, [overlapPairs, focusedOverlapPairKey]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) {
+      return;
+    }
+
+    ensureOverlapLayers(map);
+
+    const source = map.getSource(HIGHLIGHTED_SHAPES_SOURCE_ID) as GeoJSONSource | undefined;
+    if (!source) {
+      return;
+    }
+
+    const features: Feature<Polygon>[] = highlightedShapePolygons.map((shapePolygon) => ({
+      type: "Feature",
+      properties: {},
+      geometry: shapePolygon,
+    }));
+
+    source.setData({ type: "FeatureCollection", features });
+  }, [highlightedShapePolygons]);
+
+  useEffect(() => {
+    if (!focusedOverlapGeometry || focusedOverlapNonce === 0) {
+      return;
+    }
+
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    fitMapToMultiPolygon(map, toMultiPolygonLikeGeometry(focusedOverlapGeometry));
+  }, [focusedOverlapGeometry, focusedOverlapNonce]);
 
   useEffect(() => {
     if (!drawRef.current) {
