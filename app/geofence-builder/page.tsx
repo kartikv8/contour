@@ -8,16 +8,12 @@ import { OverlapWarningsPanel } from "../../components/OverlapWarningsPanel";
 import { Toolbar } from "../../components/Toolbar";
 import { detectPolygonOverlaps } from "../../lib/geometry/overlap";
 import { normalizeAnySupportedGeometryToMultiPolygon } from "../../lib/geometry/normalize";
-import { EditorMode } from "../../lib/geometry/types";
+import { createFallbackShapesFromMultiPolygon, parseMetadataShapesJson } from "../../lib/geometry/shapeMetadata";
+import { EditorMode, ShapeRecord } from "../../lib/geometry/types";
 import { validateMultiPolygon } from "../../lib/geometry/validate";
 import { fromWktToMultiPolygon, toWktMultiPolygon } from "../../lib/geometry/wkt";
 
-type ShapeEntry = {
-  id: string;
-  polygon: GeoJSON.Polygon;
-};
-
-function toMultiPolygonFromShapes(shapes: ShapeEntry[]): GeoJSON.MultiPolygon | null {
+function toMultiPolygonFromShapes(shapes: ShapeRecord[]): GeoJSON.MultiPolygon | null {
   if (shapes.length === 0) {
     return null;
   }
@@ -28,14 +24,25 @@ function toMultiPolygonFromShapes(shapes: ShapeEntry[]): GeoJSON.MultiPolygon | 
   };
 }
 
+function buildFallbackShapeFromDraw(id: string, polygon: GeoJSON.Polygon, index: number): ShapeRecord {
+  return {
+    id,
+    name: `Shape ${index + 1}`,
+    polygon,
+    tags: [],
+  };
+}
+
 export default function GeofenceBuilderPage() {
   const [mode, setMode] = useState<EditorMode>("select");
-  const [shapes, setShapes] = useState<ShapeEntry[]>([]);
+  const [shapes, setShapes] = useState<ShapeRecord[]>([]);
   const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
   const [activeShapeId, setActiveShapeId] = useState<string | null>(null);
   const [precision, setPrecision] = useState<number>(6);
+  const [importMode, setImportMode] = useState<"wkt" | "json">("wkt");
   const [wktInput, setWktInput] = useState<string>("");
-  const [importError, setImportError] = useState<string | null>(null);
+  const [jsonInput, setJsonInput] = useState<string>("");
+  const [importErrors, setImportErrors] = useState<string[]>([]);
   const [syncRevision, setSyncRevision] = useState<number>(0);
   const [focusedOverlap, setFocusedOverlap] = useState<{ pairKey: string; nonce: number } | null>(null);
   const [mapFocusRequest, setMapFocusRequest] = useState<{
@@ -49,9 +56,10 @@ export default function GeofenceBuilderPage() {
 
   const shapeLabelsById = useMemo(
     () =>
-      Object.fromEntries(
-        shapes.map((shape, index) => [shape.id, `Shape ${index + 1}`]),
-      ) as Record<string, string>,
+      Object.fromEntries(shapes.map((shape, index) => [shape.id, shape.name?.trim() || `Shape ${index + 1}`])) as Record<
+        string,
+        string
+      >,
     [shapes],
   );
 
@@ -70,7 +78,7 @@ export default function GeofenceBuilderPage() {
   }, [selectedOverlap, shapes]);
 
   const shapeExports = useMemo(() => {
-    return shapes.map((shape, index) => {
+    return shapes.map((shape) => {
       const shapeGeometry: GeoJSON.MultiPolygon = {
         type: "MultiPolygon",
         coordinates: [shape.polygon.coordinates],
@@ -79,11 +87,12 @@ export default function GeofenceBuilderPage() {
 
       return {
         id: shape.id,
+        name: shape.name,
+        tags: shape.tags ?? [],
         valid: validation.valid,
         errors: validation.errors,
         selected: selectedShapeIds.includes(shape.id),
         wkt: validation.valid ? toWktMultiPolygon(shapeGeometry, precision) : "",
-        index,
       };
     });
   }, [precision, selectedShapeIds, shapes]);
@@ -102,32 +111,58 @@ export default function GeofenceBuilderPage() {
   }, [combinedGeometry, precision]);
 
   const handleDrawPolygonsChange = useCallback((entries: Array<{ id: string; polygon: GeoJSON.Polygon }>) => {
-    setShapes(entries.map((entry) => ({ id: entry.id, polygon: entry.polygon })));
+    setShapes((previous) => {
+      const previousById = new Map(previous.map((shape) => [shape.id, shape]));
+
+      return entries.map((entry, index) => {
+        const existing = previousById.get(entry.id);
+        if (existing) {
+          return { ...existing, polygon: entry.polygon };
+        }
+
+        return buildFallbackShapeFromDraw(entry.id, entry.polygon, index);
+      });
+    });
     setSelectedShapeIds((previous) => previous.filter((shapeId) => entries.some((entry) => entry.id === shapeId)));
     setActiveShapeId((previous) => (previous && entries.some((entry) => entry.id === previous) ? previous : null));
-    setImportError(null);
+    setImportErrors([]);
   }, []);
 
   const handleImportWkt = () => {
     try {
       const imported = fromWktToMultiPolygon(wktInput);
       const normalized = normalizeAnySupportedGeometryToMultiPolygon(imported);
-      const importedShapes = normalized.coordinates.map((polygon, index) => ({
-        id: `imported-${Date.now()}-${index + 1}`,
-        polygon: { type: "Polygon" as const, coordinates: polygon },
-      }));
+      const importedShapes = createFallbackShapesFromMultiPolygon(normalized);
 
       setShapes(importedShapes);
       setSelectedShapeIds([]);
       setActiveShapeId(null);
       setSyncRevision((previous) => previous + 1);
-      setImportError(null);
+      setImportErrors([]);
       setMode("select");
       setFocusedOverlap(null);
       setMapFocusRequest(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to parse WKT.";
-      setImportError(message);
+      setImportErrors([message]);
+    }
+  };
+
+  const handleImportJson = () => {
+    try {
+      const parsed = parseMetadataShapesJson(jsonInput);
+
+      setShapes(parsed.shapes);
+      setSelectedShapeIds([]);
+      setActiveShapeId(null);
+      setSyncRevision((previous) => previous + 1);
+      setImportErrors([]);
+      setMode("select");
+      setFocusedOverlap(null);
+      setMapFocusRequest(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to parse JSON metadata.";
+      setImportErrors(message.split("\n"));
     }
   };
 
@@ -215,15 +250,21 @@ export default function GeofenceBuilderPage() {
       <aside className="builder-left-pane">
         <h1>Geofence Builder</h1>
         <p className="muted">Draw, import, and export per-shape WKT.</p>
+        <p className="muted">Import will replace existing shapes.</p>
         <p className="muted">{activeShapeId ? `Active shape on map: ${activeShapeId}` : "No active map selection."}</p>
 
         <Toolbar mode={mode} onModeChange={setMode} />
 
         <ImportWktPanel
+          importMode={importMode}
           wktInput={wktInput}
-          importError={importError}
+          jsonInput={jsonInput}
+          importErrors={importErrors}
+          onImportModeChange={setImportMode}
           onWktInputChange={setWktInput}
+          onJsonInputChange={setJsonInput}
           onImportWkt={handleImportWkt}
+          onImportJson={handleImportJson}
         />
 
         <ExportWktPanel
@@ -249,7 +290,7 @@ export default function GeofenceBuilderPage() {
       <section className="builder-right-pane">
         <MapCanvas
           mode={mode}
-          importedGeometry={combinedGeometry}
+          importedShapes={shapes.map((shape) => ({ id: shape.id, polygon: shape.polygon }))}
           syncRevision={syncRevision}
           onDrawPolygonsChange={handleDrawPolygonsChange}
           onActiveShapeChange={setActiveShapeId}
