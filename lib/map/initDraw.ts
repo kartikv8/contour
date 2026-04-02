@@ -10,13 +10,15 @@ import {
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import { EditorMode } from "../geometry/types";
 
+const APP_SHAPE_ID_PROPERTY = "appShapeId";
+
 export type DrawSeam = {
   draw: TerraDraw;
   setMode: (mode: EditorMode) => void;
   subscribeToChanges: (onChange: () => void) => () => void;
   subscribeToSelection: (handlers: { onSelect?: (id: string) => void; onDeselect?: (id: string) => void }) => () => void;
   getPolygonFeatures: () => Array<{ id: string; polygon: Polygon }>;
-  replaceWithMultiPolygon: (geometry: GeoJSON.MultiPolygon) => Array<{ id: string; polygon: Polygon }>;
+  replaceWithShapes: (shapes: Array<{ id: string; polygon: Polygon }>) => Array<{ id: string; polygon: Polygon }>;
   clearAll: () => void;
   cleanup: () => void;
 };
@@ -32,11 +34,11 @@ function toTerraDrawRings(rings: [number, number][][]): [number, number][][] {
   return rings.map((ring) => ring.map(([lng, lat]) => [roundCoordinate(lng), roundCoordinate(lat)]));
 }
 
-function toPolygonFeature(id: string | number, rings: [number, number][][]): GeoJSONStoreFeatures {
+function toPolygonFeature(id: string | number, appShapeId: string, rings: [number, number][][]): GeoJSONStoreFeatures {
   return {
     type: "Feature",
     id,
-    properties: { mode: "polygon" },
+    properties: { mode: "polygon", [APP_SHAPE_ID_PROPERTY]: appShapeId },
     geometry: {
       type: "Polygon",
       coordinates: rings,
@@ -77,6 +79,13 @@ export function initDrawSeam(map: Map): DrawSeam {
 
   draw.start();
   draw.setMode("select");
+  const terraToAppId = new globalThis.Map<string, string>();
+  let generatedIdCounter = 0;
+
+  const createAppOwnedId = () => {
+    generatedIdCounter += 1;
+    return `drawn-${Date.now()}-${generatedIdCounter}`;
+  };
 
   const setMode = (mode: EditorMode) => {
     draw.setMode(mode);
@@ -101,7 +110,9 @@ export function initDrawSeam(map: Map): DrawSeam {
     onDeselect?: (id: string) => void;
   }): (() => void) => {
     const selectListener = (id: string | number) => {
-      handlers.onSelect?.(toShapeId(id));
+      const terraId = toShapeId(id);
+      const appId = terraToAppId.get(terraId);
+      handlers.onSelect?.(appId ?? terraId);
     };
     const deselectListener = (id: string | number) => {
       handlers.onDeselect?.(toShapeId(id));
@@ -121,14 +132,30 @@ export function initDrawSeam(map: Map): DrawSeam {
 
     return snapshot
       .filter((feature) => feature.geometry.type === "Polygon" && feature.id !== undefined)
-      .map((feature) => ({ id: toShapeId(feature.id as string | number), polygon: feature.geometry as Polygon }));
+      .map((feature) => {
+        const terraId = toShapeId(feature.id as string | number);
+        const rawPropertyId =
+          feature.properties && typeof feature.properties[APP_SHAPE_ID_PROPERTY] === "string"
+            ? (feature.properties[APP_SHAPE_ID_PROPERTY] as string)
+            : null;
+        const appShapeId = rawPropertyId && rawPropertyId.trim().length > 0 ? rawPropertyId.trim() : createAppOwnedId();
+
+        terraToAppId.set(terraId, appShapeId);
+
+        if (!rawPropertyId || rawPropertyId.trim() !== appShapeId) {
+          draw.updateFeatureProperties(feature.id as string | number, { [APP_SHAPE_ID_PROPERTY]: appShapeId });
+        }
+
+        return { id: appShapeId, polygon: feature.geometry as Polygon };
+      });
   };
 
-  const replaceWithMultiPolygon = (geometry: GeoJSON.MultiPolygon): Array<{ id: string; polygon: Polygon }> => {
+  const replaceWithShapes = (shapes: Array<{ id: string; polygon: Polygon }>): Array<{ id: string; polygon: Polygon }> => {
     draw.clear();
+    terraToAppId.clear();
 
-    const features = geometry.coordinates.map((rings) =>
-      toPolygonFeature(draw.getFeatureId(), toTerraDrawRings(rings as [number, number][][])),
+    const features = shapes.map((shape) =>
+      toPolygonFeature(draw.getFeatureId(), shape.id, toTerraDrawRings(shape.polygon.coordinates as [number, number][][])),
     );
 
     if (features.length > 0) {
@@ -158,7 +185,7 @@ export function initDrawSeam(map: Map): DrawSeam {
     subscribeToChanges,
     subscribeToSelection,
     getPolygonFeatures,
-    replaceWithMultiPolygon,
+    replaceWithShapes,
     clearAll,
     cleanup,
   };

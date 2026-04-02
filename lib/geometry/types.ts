@@ -1,5 +1,12 @@
 export type EditorMode = "select" | "polygon" | "rectangle";
 
+export type ShapeRecord = {
+  id: string;
+  name: string;
+  polygon: GeoJSON.Polygon;
+  tags?: string[];
+};
+
 export type ValidationIssue = {
   code: string;
   message: string;
@@ -9,4 +16,11 @@ export type ValidationIssue = {
 export type ValidationResult = {
   valid: boolean;
   errors: ValidationIssue[];
+};
+
+export type MetadataImportEntry = {
+  id: string;
+  name: string;
+  polygon: string;
+  tags?: string[];
 };
