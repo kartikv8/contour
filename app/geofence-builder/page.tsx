@@ -38,6 +38,10 @@ export default function GeofenceBuilderPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [syncRevision, setSyncRevision] = useState<number>(0);
   const [focusedOverlap, setFocusedOverlap] = useState<{ pairKey: string; nonce: number } | null>(null);
+  const [mapFocusRequest, setMapFocusRequest] = useState<{
+    geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+    nonce: number;
+  } | null>(null);
 
   const combinedGeometry = useMemo(() => toMultiPolygonFromShapes(shapes), [shapes]);
 
@@ -120,6 +124,7 @@ export default function GeofenceBuilderPage() {
       setImportError(null);
       setMode("select");
       setFocusedOverlap(null);
+      setMapFocusRequest(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to parse WKT.";
       setImportError(message);
@@ -176,10 +181,31 @@ export default function GeofenceBuilderPage() {
       const shapeBExists = remainingShapes.some((shape) => shape.id === shapeBId);
       return shapeAExists && shapeBExists ? previous : null;
     });
+    setMapFocusRequest((previous) => {
+      if (!previous || !focusedOverlap) {
+        return null;
+      }
+
+      const pair = focusedOverlap.pairKey.split("::");
+      if (pair.length !== 2) {
+        return null;
+      }
+
+      const [shapeAId, shapeBId] = pair;
+      const shapeAExists = remainingShapes.some((shape) => shape.id === shapeAId);
+      const shapeBExists = remainingShapes.some((shape) => shape.id === shapeBId);
+      return shapeAExists && shapeBExists ? previous : null;
+    });
   };
 
   const handleSelectOverlap = (pairKey: string) => {
+    const overlap = overlaps.find((entry) => entry.pairKey === pairKey);
+    if (!overlap) {
+      return;
+    }
+
     setFocusedOverlap((previous) => ({ pairKey, nonce: (previous?.nonce ?? 0) + 1 }));
+    setMapFocusRequest((previous) => ({ geometry: overlap.geometry, nonce: (previous?.nonce ?? 0) + 1 }));
   };
 
   const focusedPairKey = selectedOverlap?.pairKey ?? null;
@@ -228,9 +254,9 @@ export default function GeofenceBuilderPage() {
           onDrawPolygonsChange={handleDrawPolygonsChange}
           onActiveShapeChange={setActiveShapeId}
           overlapPairs={overlaps}
-          focusedOverlapGeometry={selectedOverlap?.geometry ?? null}
           focusedOverlapPairKey={focusedPairKey}
-          focusedOverlapNonce={focusedOverlap?.nonce ?? 0}
+          mapFocusGeometry={mapFocusRequest?.geometry ?? null}
+          mapFocusNonce={mapFocusRequest?.nonce ?? 0}
           highlightedShapePolygons={highlightedShapePolygons}
         />
       </section>

@@ -23,9 +23,9 @@ type MapCanvasProps = {
   onDrawPolygonsChange: (shapes: Array<{ id: string; polygon: GeoJSON.Polygon }>) => void;
   onActiveShapeChange?: (shapeId: string | null) => void;
   overlapPairs: OverlapPair[];
-  focusedOverlapGeometry: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   focusedOverlapPairKey: string | null;
-  focusedOverlapNonce: number;
+  mapFocusGeometry: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  mapFocusNonce: number;
   highlightedShapePolygons: GeoJSON.Polygon[];
 };
 
@@ -103,9 +103,9 @@ export function MapCanvas({
   onDrawPolygonsChange,
   onActiveShapeChange,
   overlapPairs,
-  focusedOverlapGeometry,
   focusedOverlapPairKey,
-  focusedOverlapNonce,
+  mapFocusGeometry,
+  mapFocusNonce,
   highlightedShapePolygons,
 }: MapCanvasProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -299,7 +299,7 @@ export function MapCanvas({
   }, [highlightedShapePolygons]);
 
   useEffect(() => {
-    if (!focusedOverlapGeometry || focusedOverlapNonce === 0) {
+    if (!mapFocusGeometry || mapFocusNonce === 0) {
       return;
     }
 
@@ -308,8 +308,8 @@ export function MapCanvas({
       return;
     }
 
-    fitMapToMultiPolygon(map, toMultiPolygonLikeGeometry(focusedOverlapGeometry));
-  }, [focusedOverlapGeometry, focusedOverlapNonce]);
+    fitMapToMultiPolygon(map, toMultiPolygonLikeGeometry(mapFocusGeometry));
+  }, [mapFocusGeometry, mapFocusNonce]);
 
   useEffect(() => {
     if (!drawRef.current) {
