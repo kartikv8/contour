@@ -18,7 +18,7 @@ const HIGHLIGHTED_SHAPES_LINE_LAYER_ID = "highlighted-shapes-line";
 
 type MapCanvasProps = {
   mode: EditorMode;
-  importedGeometry: GeoJSON.MultiPolygon | null;
+  importedShapes: Array<{ id: string; polygon: GeoJSON.Polygon }>;
   syncRevision: number;
   onDrawPolygonsChange: (shapes: Array<{ id: string; polygon: GeoJSON.Polygon }>) => void;
   onActiveShapeChange?: (shapeId: string | null) => void;
@@ -98,7 +98,7 @@ function ensureOverlapLayers(map: Map) {
 
 export function MapCanvas({
   mode,
-  importedGeometry,
+  importedShapes,
   syncRevision,
   onDrawPolygonsChange,
   onActiveShapeChange,
@@ -112,7 +112,7 @@ export function MapCanvas({
   const mapRef = useRef<Map | null>(null);
   const drawRef = useRef<DrawSeam | null>(null);
   const modeRef = useRef<EditorMode>(mode);
-  const importedGeometryRef = useRef<GeoJSON.MultiPolygon | null>(importedGeometry);
+  const importedShapesRef = useRef<Array<{ id: string; polygon: GeoJSON.Polygon }>>(importedShapes);
   const syncRevisionRef = useRef<number>(syncRevision);
   const appliedSyncRevisionRef = useRef<number>(0);
   const isImportHydratingRef = useRef<boolean>(false);
@@ -125,8 +125,8 @@ export function MapCanvas({
   }, [mode]);
 
   useEffect(() => {
-    importedGeometryRef.current = importedGeometry;
-  }, [importedGeometry]);
+    importedShapesRef.current = importedShapes;
+  }, [importedShapes]);
 
   useEffect(() => {
     syncRevisionRef.current = syncRevision;
@@ -179,23 +179,26 @@ export function MapCanvas({
 
       ensureOverlapLayers(map);
 
-      const currentImported = importedGeometryRef.current;
-      if (currentImported) {
+      const currentImported = importedShapesRef.current;
+      if (currentImported.length > 0) {
         if (syncRevisionRef.current > 0) {
           appliedSyncRevisionRef.current = syncRevisionRef.current;
         }
         try {
           isImportHydratingRef.current = true;
-          const hydratedPolygons = draw.replaceWithMultiPolygon(currentImported);
+          const hydratedPolygons = draw.replaceWithShapes(currentImported);
           if (hydratedPolygons.length > 0) {
             onDrawPolygonsChange(hydratedPolygons);
           }
         } catch (error) {
-          console.error("[DRAW_HYDRATE] replaceWithMultiPolygon failed in style-ready path", error);
+          console.error("[DRAW_HYDRATE] replaceWithShapes failed in style-ready path", error);
         } finally {
           isImportHydratingRef.current = false;
         }
-        fitMapToMultiPolygon(map, currentImported);
+        fitMapToMultiPolygon(map, {
+          type: "MultiPolygon",
+          coordinates: currentImported.map((shape) => shape.polygon.coordinates),
+        });
       }
     };
 
@@ -322,7 +325,7 @@ export function MapCanvas({
 
     appliedSyncRevisionRef.current = syncRevision;
 
-    if (!importedGeometry) {
+    if (importedShapes.length === 0) {
       drawRef.current.clearAll();
       onActiveShapeChange?.(null);
       onDrawPolygonsChange([]);
@@ -331,20 +334,23 @@ export function MapCanvas({
 
     try {
       isImportHydratingRef.current = true;
-      const hydratedPolygons = drawRef.current.replaceWithMultiPolygon(importedGeometry);
+      const hydratedPolygons = drawRef.current.replaceWithShapes(importedShapes);
       if (hydratedPolygons.length > 0) {
         onDrawPolygonsChange(hydratedPolygons);
       }
     } catch (error) {
-      console.error("[DRAW_HYDRATE] replaceWithMultiPolygon failed in import sync effect", error);
+      console.error("[DRAW_HYDRATE] replaceWithShapes failed in import sync effect", error);
     } finally {
       isImportHydratingRef.current = false;
     }
     const map = mapRef.current;
     if (map) {
-      fitMapToMultiPolygon(map, importedGeometry);
+      fitMapToMultiPolygon(map, {
+        type: "MultiPolygon",
+        coordinates: importedShapes.map((shape) => shape.polygon.coordinates),
+      });
     }
-  }, [syncRevision, importedGeometry, onDrawPolygonsChange, onActiveShapeChange]);
+  }, [syncRevision, importedShapes, onDrawPolygonsChange, onActiveShapeChange]);
 
   return (
     <div className="map-canvas-shell">

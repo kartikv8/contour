@@ -2,6 +2,8 @@ import { ValidationIssue } from "../lib/geometry/types";
 
 type ShapeExportEntry = {
   id: string;
+  name: string;
+  tags: string[];
   wkt: string;
   valid: boolean;
   errors: ValidationIssue[];
@@ -56,7 +58,7 @@ export function ExportWktPanel({
       </div>
 
       {shapeExports.length === 0 ? <p className="muted">Draw or import shapes to export.</p> : null}
-      {shapeExports.map((entry, index) => (
+      {shapeExports.map((entry) => (
         <div key={entry.id} className="shape-export-row">
           <label className="shape-export-title">
             <input
@@ -64,8 +66,10 @@ export function ExportWktPanel({
               checked={entry.selected}
               onChange={() => onToggleShape(entry.id)}
             />{" "}
-            Shape {index + 1}
+            {entry.name}
           </label>
+          <p className="muted metadata-row">ID: {entry.id}</p>
+          {entry.tags.length > 0 ? <p className="muted metadata-row">Tags: {entry.tags.join(", ")}</p> : null}
           <textarea className="text-area" readOnly value={entry.wkt} />
           <div className="panel-actions">
             <button type="button" disabled={!entry.valid} onClick={() => onCopyShape(entry.id)}>

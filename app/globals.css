@@ -151,6 +151,15 @@ body {
   margin: 0;
 }
 
+.metadata-row {
+  margin: 0.2rem 0 0;
+}
+
+.import-helper-text {
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
 .warning-summary {
   margin: 0.5rem 0;
   color: #991b1b;
