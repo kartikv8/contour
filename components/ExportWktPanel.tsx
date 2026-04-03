@@ -1,3 +1,4 @@
+import { KeyboardEvent, useState } from "react";
 import { ValidationIssue } from "../lib/geometry/types";
 
 type ShapeExportEntry = {
@@ -19,6 +20,8 @@ type ExportWktPanelProps = {
   onCopyCombined: () => void;
   onToggleShape: (shapeId: string) => void;
   onClearSelected: () => void;
+  onShapeNameChange: (shapeId: string, name: string) => void;
+  onShapeTagsChange: (shapeId: string, rawTags: string) => void;
 };
 
 const PRECISION_OPTIONS = [5, 6, 7, 8];
@@ -32,8 +35,31 @@ export function ExportWktPanel({
   onCopyCombined,
   onToggleShape,
   onClearSelected,
+  onShapeNameChange,
+  onShapeTagsChange,
 }: ExportWktPanelProps) {
   const hasSelected = shapeExports.some((shape) => shape.selected);
+  const [tagDraftById, setTagDraftById] = useState<Record<string, string>>({});
+
+  const commitTags = (shapeId: string, rawValue: string) => {
+    onShapeTagsChange(shapeId, rawValue);
+    setTagDraftById((previous) => {
+      const next = { ...previous };
+      delete next[shapeId];
+      return next;
+    });
+  };
+
+  const handleTagsKeyDown = (shapeId: string, event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+    const value = event.currentTarget.value;
+    commitTags(shapeId, value);
+    event.currentTarget.blur();
+  };
 
   return (
     <section className="panel" aria-label="Export WKT panel">
@@ -69,7 +95,33 @@ export function ExportWktPanel({
             {entry.name}
           </label>
           <p className="muted metadata-row">ID: {entry.id}</p>
-          {entry.tags.length > 0 ? <p className="muted metadata-row">Tags: {entry.tags.join(", ")}</p> : null}
+          <label className="metadata-field" htmlFor={`shape-name-${entry.id}`}>
+            Name
+          </label>
+          <input
+            id={`shape-name-${entry.id}`}
+            className="metadata-input"
+            type="text"
+            value={entry.name}
+            onChange={(event) => onShapeNameChange(entry.id, event.target.value)}
+          />
+          <label className="metadata-field" htmlFor={`shape-tags-${entry.id}`}>
+            Tags (comma-separated)
+          </label>
+          <input
+            id={`shape-tags-${entry.id}`}
+            className="metadata-input"
+            type="text"
+            value={tagDraftById[entry.id] ?? entry.tags.join(", ")}
+            onChange={(event) =>
+              setTagDraftById((previous) => ({
+                ...previous,
+                [entry.id]: event.target.value,
+              }))
+            }
+            onBlur={(event) => commitTags(entry.id, event.target.value)}
+            onKeyDown={(event) => handleTagsKeyDown(entry.id, event)}
+          />
           <textarea className="text-area" readOnly value={entry.wkt} />
           <div className="panel-actions">
             <button type="button" disabled={!entry.valid} onClick={() => onCopyShape(entry.id)}>

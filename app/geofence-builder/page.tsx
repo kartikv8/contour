@@ -33,6 +33,26 @@ function buildFallbackShapeFromDraw(id: string, polygon: GeoJSON.Polygon, index:
   };
 }
 
+function normalizeTags(rawTags: string): string[] {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+
+  rawTags
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0)
+    .forEach((tag) => {
+      if (seen.has(tag)) {
+        return;
+      }
+
+      seen.add(tag);
+      normalized.push(tag);
+    });
+
+  return normalized;
+}
+
 export default function GeofenceBuilderPage() {
   const [mode, setMode] = useState<EditorMode>("select");
   const [shapes, setShapes] = useState<ShapeRecord[]>([]);
@@ -189,6 +209,20 @@ export default function GeofenceBuilderPage() {
     );
   };
 
+  const handleShapeNameChange = (shapeId: string, nextName: string) => {
+    setShapes((previous) =>
+      previous.map((shape) => (shape.id === shapeId ? { ...shape, name: nextName } : shape)),
+    );
+  };
+
+  const handleShapeTagsChange = (shapeId: string, rawTags: string) => {
+    const normalizedTags = normalizeTags(rawTags);
+
+    setShapes((previous) =>
+      previous.map((shape) => (shape.id === shapeId ? { ...shape, tags: normalizedTags } : shape)),
+    );
+  };
+
   const handleClearSelected = () => {
     if (selectedShapeIds.length === 0) {
       return;
@@ -276,6 +310,8 @@ export default function GeofenceBuilderPage() {
           onCopyCombined={handleCopyCombined}
           onToggleShape={handleToggleShape}
           onClearSelected={handleClearSelected}
+          onShapeNameChange={handleShapeNameChange}
+          onShapeTagsChange={handleShapeTagsChange}
         />
 
         <OverlapWarningsPanel
