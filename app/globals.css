@@ -155,6 +155,24 @@ body {
   margin: 0.2rem 0 0;
 }
 
+.metadata-field {
+  display: block;
+  font-size: 0.78rem;
+  color: #374151;
+  margin-top: 0.45rem;
+}
+
+.metadata-input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.82rem;
+  color: #111827;
+  background: #fff;
+  margin-top: 0.2rem;
+}
+
 .import-helper-text {
   margin-top: 0.5rem;
   margin-bottom: 0.25rem;
