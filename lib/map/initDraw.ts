@@ -1,4 +1,4 @@
-import type { Polygon } from "geojson";
+import type { Position, Polygon } from "geojson";
 import type { Map } from "maplibre-gl";
 import {
   TerraDraw,
@@ -8,9 +8,21 @@ import {
   type GeoJSONStoreFeatures,
 } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
+import { resolveSnapTarget } from "../geometry/snap";
 import { EditorMode } from "../geometry/types";
 
 const APP_SHAPE_ID_PROPERTY = "appShapeId";
+const SNAP_THRESHOLD_PX = 8;
+const SNAP_AMBIGUITY_TOLERANCE_PX = 1;
+
+
+type SnapContext = {
+  currentId?: string | number;
+  currentCoordinate?: number;
+  getCurrentGeometrySnapshot: () => GeoJSON.Polygon | GeoJSON.LineString | null;
+  project: (lng: number, lat: number) => { x: number; y: number };
+  unproject: (x: number, y: number) => { lng: number; lat: number };
+};
 
 export type DrawSeam = {
   draw: TerraDraw;
@@ -52,6 +64,55 @@ function toShapeId(featureId: string | number): string {
 
 export function initDrawSeam(map: Map): DrawSeam {
   const adapter = new TerraDrawMapLibreGLAdapter({ map });
+  const terraToAppId = new globalThis.Map<string, string>();
+
+  const resolveSnappingTarget = (event: { lng: number; lat: number }, context: SnapContext): Position | undefined => {
+    if (context.currentId === undefined || context.currentCoordinate === undefined) {
+      return undefined;
+    }
+
+    const currentGeometry = context.getCurrentGeometrySnapshot();
+    if (!currentGeometry || currentGeometry.type !== "Polygon") {
+      return undefined;
+    }
+
+    const currentTerraId = toShapeId(context.currentId);
+    const currentAppId = terraToAppId.get(currentTerraId);
+
+    const candidates = draw
+      .getSnapshot()
+      .filter((feature) => feature.id !== undefined && feature.geometry.type === "Polygon")
+      .filter((feature) => {
+        const terraId = toShapeId(feature.id as string | number);
+        if (terraId === currentTerraId) {
+          return false;
+        }
+
+        if (!currentAppId) {
+          return true;
+        }
+
+        const candidateAppId =
+          feature.properties && typeof feature.properties[APP_SHAPE_ID_PROPERTY] === "string"
+            ? (feature.properties[APP_SHAPE_ID_PROPERTY] as string)
+            : null;
+
+        return candidateAppId !== currentAppId;
+      })
+      .map((feature) => ({
+        id: toShapeId(feature.id as string | number),
+        rings: feature.geometry.coordinates as Position[][],
+      }));
+
+    return resolveSnapTarget({
+      point: [event.lng, event.lat],
+      candidates,
+      project: context.project,
+      unproject: context.unproject,
+      thresholdPx: SNAP_THRESHOLD_PX,
+      ambiguityTolerancePx: SNAP_AMBIGUITY_TOLERANCE_PX,
+    });
+  };
 
   const draw = new TerraDraw({
     adapter,
@@ -66,6 +127,7 @@ export function initDrawSeam(map: Map): DrawSeam {
               selfIntersectable: false,
               coordinates: {
                 draggable: true,
+                snappable: { toCustom: resolveSnappingTarget },
                 midpoints: { draggable: true },
               },
             },
@@ -79,7 +141,6 @@ export function initDrawSeam(map: Map): DrawSeam {
 
   draw.start();
   draw.setMode("select");
-  const terraToAppId = new globalThis.Map<string, string>();
   let generatedIdCounter = 0;
 
   const createAppOwnedId = () => {
