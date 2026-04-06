@@ -226,6 +226,7 @@ export function MapCanvas({
   const syncRevisionRef = useRef<number>(syncRevision);
   const appliedSyncRevisionRef = useRef<number>(0);
   const isImportHydratingRef = useRef<boolean>(false);
+  const labelFeatureCollectionRef = useRef<FeatureCollection>(toEmptyFeatureCollection());
   const [cursor, setCursor] = useState<CursorCoords>();
   const unsubscribeDrawChangesRef = useRef<(() => void) | null>(null);
   const unsubscribeSelectionRef = useRef<(() => void) | null>(null);
@@ -255,6 +256,10 @@ export function MapCanvas({
 
     return { type: "FeatureCollection", features };
   }, [canonicalShapes, activeShapeId]);
+
+  useEffect(() => {
+    labelFeatureCollectionRef.current = labelFeatureCollection;
+  }, [labelFeatureCollection]);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -359,7 +364,7 @@ export function MapCanvas({
       ensureShapeLabelLayers(map);
 
       const labelsSource = map.getSource(SHAPE_LABELS_SOURCE_ID) as GeoJSONSource | undefined;
-      labelsSource?.setData(labelFeatureCollection);
+      labelsSource?.setData(labelFeatureCollectionRef.current);
     };
     map.on("styledata", handleStyleData);
 
@@ -383,7 +388,7 @@ export function MapCanvas({
       mapRef.current = null;
       mapCleanup();
     };
-  }, [onDrawPolygonsChange, onActiveShapeChange, labelFeatureCollection]);
+  }, [onDrawPolygonsChange, onActiveShapeChange]);
 
   useEffect(() => {
     if (!drawRef.current) {
