@@ -15,6 +15,7 @@ type ExportWktPanelProps = {
   precision: number;
   shapeExports: ShapeExportEntry[];
   combinedWkt: string;
+  activeShapeId: string | null;
   onPrecisionChange: (precision: number) => void;
   onCopyShape: (shapeId: string) => void;
   onCopyCombined: () => void;
@@ -22,6 +23,7 @@ type ExportWktPanelProps = {
   onClearSelected: () => void;
   onShapeNameChange: (shapeId: string, name: string) => void;
   onShapeTagsChange: (shapeId: string, rawTags: string) => void;
+  onSetActiveShape: (shapeId: string) => void;
 };
 
 const PRECISION_OPTIONS = [5, 6, 7, 8];
@@ -30,6 +32,7 @@ export function ExportWktPanel({
   precision,
   shapeExports,
   combinedWkt,
+  activeShapeId,
   onPrecisionChange,
   onCopyShape,
   onCopyCombined,
@@ -37,6 +40,7 @@ export function ExportWktPanel({
   onClearSelected,
   onShapeNameChange,
   onShapeTagsChange,
+  onSetActiveShape,
 }: ExportWktPanelProps) {
   const hasSelected = shapeExports.some((shape) => shape.selected);
   const [tagDraftById, setTagDraftById] = useState<Record<string, string>>({});
@@ -85,7 +89,11 @@ export function ExportWktPanel({
 
       {shapeExports.length === 0 ? <p className="muted">Draw or import shapes to export.</p> : null}
       {shapeExports.map((entry) => (
-        <div key={entry.id} className="shape-export-row">
+        <div
+          key={entry.id}
+          className={`shape-export-row${entry.id === activeShapeId ? " active" : ""}`}
+          onClick={() => onSetActiveShape(entry.id)}
+        >
           <label className="shape-export-title">
             <input
               type="checkbox"
@@ -104,6 +112,7 @@ export function ExportWktPanel({
             type="text"
             value={entry.name}
             onChange={(event) => onShapeNameChange(entry.id, event.target.value)}
+            onFocus={() => onSetActiveShape(entry.id)}
           />
           <label className="metadata-field" htmlFor={`shape-tags-${entry.id}`}>
             Tags (comma-separated)
@@ -121,6 +130,7 @@ export function ExportWktPanel({
             }
             onBlur={(event) => commitTags(entry.id, event.target.value)}
             onKeyDown={(event) => handleTagsKeyDown(entry.id, event)}
+            onFocus={() => onSetActiveShape(entry.id)}
           />
           <textarea className="text-area" readOnly value={entry.wkt} />
           <div className="panel-actions">

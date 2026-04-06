@@ -305,6 +305,7 @@ export default function GeofenceBuilderPage() {
           precision={precision}
           shapeExports={shapeExports}
           combinedWkt={combinedWkt}
+          activeShapeId={activeShapeId}
           onPrecisionChange={setPrecision}
           onCopyShape={handleCopyShape}
           onCopyCombined={handleCopyCombined}
@@ -312,6 +313,7 @@ export default function GeofenceBuilderPage() {
           onClearSelected={handleClearSelected}
           onShapeNameChange={handleShapeNameChange}
           onShapeTagsChange={handleShapeTagsChange}
+          onSetActiveShape={setActiveShapeId}
         />
 
         <OverlapWarningsPanel
@@ -327,6 +329,8 @@ export default function GeofenceBuilderPage() {
         <MapCanvas
           mode={mode}
           importedShapes={shapes.map((shape) => ({ id: shape.id, polygon: shape.polygon }))}
+          canonicalShapes={shapes}
+          activeShapeId={activeShapeId}
           syncRevision={syncRevision}
           onDrawPolygonsChange={handleDrawPolygonsChange}
           onActiveShapeChange={setActiveShapeId}
