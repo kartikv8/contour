@@ -122,6 +122,12 @@ function getLabelPointForPolygon(polygon: GeoJSON.Polygon): [number, number] | n
 }
 
 function ensureOverlapLayers(map: Map) {
+  const overlapBeforeLayerId = (() => {
+    const styleLayers = map.getStyle()?.layers ?? [];
+    return styleLayers.find((layer) => /(?:terra|draw|td-)/i.test(layer.id) && (layer.type === "circle" || layer.type === "symbol"))
+      ?.id;
+  })();
+
   if (!map.getSource(OVERLAP_SOURCE_ID)) {
     map.addSource(OVERLAP_SOURCE_ID, {
       type: "geojson",
@@ -138,7 +144,9 @@ function ensureOverlapLayers(map: Map) {
         "fill-color": "#dc2626",
         "fill-opacity": ["case", ["==", ["get", "active"], true], 0.45, 0.22],
       },
-    });
+    }, overlapBeforeLayerId);
+  } else if (overlapBeforeLayerId) {
+    map.moveLayer(OVERLAP_FILL_LAYER_ID, overlapBeforeLayerId);
   }
 
   if (!map.getLayer(OVERLAP_LINE_LAYER_ID)) {
@@ -150,7 +158,9 @@ function ensureOverlapLayers(map: Map) {
         "line-color": "#b91c1c",
         "line-width": ["case", ["==", ["get", "active"], true], 3, 2],
       },
-    });
+    }, overlapBeforeLayerId);
+  } else if (overlapBeforeLayerId) {
+    map.moveLayer(OVERLAP_LINE_LAYER_ID, overlapBeforeLayerId);
   }
 
   if (!map.getSource(HIGHLIGHTED_SHAPES_SOURCE_ID)) {
