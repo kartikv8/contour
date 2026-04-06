@@ -227,6 +227,7 @@ export function MapCanvas({
   const appliedSyncRevisionRef = useRef<number>(0);
   const isImportHydratingRef = useRef<boolean>(false);
   const labelFeatureCollectionRef = useRef<FeatureCollection>(toEmptyFeatureCollection());
+  const overlapFeatureCollectionRef = useRef<FeatureCollection>(toEmptyFeatureCollection());
   const [cursor, setCursor] = useState<CursorCoords>();
   const unsubscribeDrawChangesRef = useRef<(() => void) | null>(null);
   const unsubscribeSelectionRef = useRef<(() => void) | null>(null);
@@ -257,9 +258,25 @@ export function MapCanvas({
     return { type: "FeatureCollection", features };
   }, [canonicalShapes, activeShapeId]);
 
+  const overlapFeatureCollection = useMemo<FeatureCollection<Polygon | MultiPolygon>>(
+    () => ({
+      type: "FeatureCollection",
+      features: overlapPairs.map((pair) => ({
+        type: "Feature",
+        properties: { pairKey: pair.pairKey, active: pair.pairKey === focusedOverlapPairKey },
+        geometry: pair.geometry,
+      })),
+    }),
+    [overlapPairs, focusedOverlapPairKey],
+  );
+
   useEffect(() => {
     labelFeatureCollectionRef.current = labelFeatureCollection;
   }, [labelFeatureCollection]);
+
+  useEffect(() => {
+    overlapFeatureCollectionRef.current = overlapFeatureCollection;
+  }, [overlapFeatureCollection]);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -363,6 +380,9 @@ export function MapCanvas({
       ensureOverlapLayers(map);
       ensureShapeLabelLayers(map);
 
+      const overlapSource = map.getSource(OVERLAP_SOURCE_ID) as GeoJSONSource | undefined;
+      overlapSource?.setData(overlapFeatureCollectionRef.current);
+
       const labelsSource = map.getSource(SHAPE_LABELS_SOURCE_ID) as GeoJSONSource | undefined;
       labelsSource?.setData(labelFeatureCollectionRef.current);
     };
@@ -422,14 +442,8 @@ export function MapCanvas({
       return;
     }
 
-    const features: Feature<Polygon | MultiPolygon>[] = overlapPairs.map((pair) => ({
-      type: "Feature",
-      properties: { pairKey: pair.pairKey, active: pair.pairKey === focusedOverlapPairKey },
-      geometry: pair.geometry,
-    }));
-
-    source.setData({ type: "FeatureCollection", features });
-  }, [overlapPairs, focusedOverlapPairKey]);
+    source.setData(overlapFeatureCollection);
+  }, [overlapFeatureCollection]);
 
   useEffect(() => {
     const map = mapRef.current;
