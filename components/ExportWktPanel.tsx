@@ -21,7 +21,7 @@ type ExportWktPanelProps = {
   onCopyCombined: () => void;
   onToggleShape: (shapeId: string) => void;
   onClearSelected: () => void;
-  onShapeNameChange: (shapeId: string, name: string) => void;
+  onShapeNameCommit: (shapeId: string, name: string) => void;
   onShapeTagsChange: (shapeId: string, rawTags: string) => void;
   onSetActiveShape: (shapeId: string) => void;
 };
@@ -38,12 +38,22 @@ export function ExportWktPanel({
   onCopyCombined,
   onToggleShape,
   onClearSelected,
-  onShapeNameChange,
+  onShapeNameCommit,
   onShapeTagsChange,
   onSetActiveShape,
 }: ExportWktPanelProps) {
   const hasSelected = shapeExports.some((shape) => shape.selected);
   const [tagDraftById, setTagDraftById] = useState<Record<string, string>>({});
+  const [nameDraftById, setNameDraftById] = useState<Record<string, string>>({});
+
+  const commitName = (shapeId: string, rawValue: string) => {
+    onShapeNameCommit(shapeId, rawValue);
+    setNameDraftById((previous) => {
+      const next = { ...previous };
+      delete next[shapeId];
+      return next;
+    });
+  };
 
   const commitTags = (shapeId: string, rawValue: string) => {
     onShapeTagsChange(shapeId, rawValue);
@@ -62,6 +72,17 @@ export function ExportWktPanel({
     event.preventDefault();
     const value = event.currentTarget.value;
     commitTags(shapeId, value);
+    event.currentTarget.blur();
+  };
+
+  const handleNameKeyDown = (shapeId: string, event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+    const value = event.currentTarget.value;
+    commitName(shapeId, value);
     event.currentTarget.blur();
   };
 
@@ -110,8 +131,15 @@ export function ExportWktPanel({
             id={`shape-name-${entry.id}`}
             className="metadata-input"
             type="text"
-            value={entry.name}
-            onChange={(event) => onShapeNameChange(entry.id, event.target.value)}
+            value={nameDraftById[entry.id] ?? entry.name}
+            onChange={(event) =>
+              setNameDraftById((previous) => ({
+                ...previous,
+                [entry.id]: event.target.value,
+              }))
+            }
+            onBlur={(event) => commitName(entry.id, event.target.value)}
+            onKeyDown={(event) => handleNameKeyDown(entry.id, event)}
             onFocus={() => onSetActiveShape(entry.id)}
           />
           <label className="metadata-field" htmlFor={`shape-tags-${entry.id}`}>

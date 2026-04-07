@@ -2,12 +2,16 @@ import { EditorMode } from "../lib/geometry/types";
 
 type ToolbarProps = {
   mode: EditorMode;
+  canUndo: boolean;
+  canRedo: boolean;
   onModeChange: (mode: EditorMode) => void;
+  onUndo: () => void;
+  onRedo: () => void;
 };
 
 const MODES: EditorMode[] = ["select", "polygon", "rectangle"];
 
-export function Toolbar({ mode, onModeChange }: ToolbarProps) {
+export function Toolbar({ mode, canUndo, canRedo, onModeChange, onUndo, onRedo }: ToolbarProps) {
   return (
     <section className="panel" aria-label="Toolbar">
       <h2>Toolbar</h2>
@@ -22,6 +26,14 @@ export function Toolbar({ mode, onModeChange }: ToolbarProps) {
             {option}
           </button>
         ))}
+      </div>
+      <div className="toolbar-row">
+        <button type="button" onClick={onUndo} disabled={!canUndo}>
+          Undo
+        </button>
+        <button type="button" onClick={onRedo} disabled={!canRedo}>
+          Redo
+        </button>
       </div>
     </section>
   );
