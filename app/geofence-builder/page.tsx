@@ -79,6 +79,7 @@ export default function GeofenceBuilderPage() {
   } | null>(null);
   const [history, setHistory] = useState<HistoryState>(() => createHistoryState());
   const shapesRef = useRef<ShapeRecord[]>(shapes);
+  const pendingDrawCommitBaseRef = useRef<ShapeRecord[] | null>(null);
 
   useEffect(() => {
     shapesRef.current = shapes;
@@ -152,6 +153,7 @@ export default function GeofenceBuilderPage() {
         source?: "draw_change" | "draw_finish" | "import" | "delete" | "metadata" | "undo" | "redo" | "rehydrate";
         preserveSelection?: boolean;
         syncDraw?: boolean;
+        commitBase?: ShapeRecord[];
       },
     ) => {
       const shouldCommit = options?.commit ?? false;
@@ -159,15 +161,21 @@ export default function GeofenceBuilderPage() {
       const shouldSyncDraw = options?.syncDraw ?? false;
 
       const currentShapes = shapesRef.current;
-      if (areShapeSnapshotsEqual(currentShapes, nextShapes)) {
+      const commitBase = options?.commitBase ?? currentShapes;
+      const shapesChanged = !areShapeSnapshotsEqual(currentShapes, nextShapes);
+      const shouldRecordCommit = shouldCommit && !areShapeSnapshotsEqual(commitBase, nextShapes);
+
+      if (!shapesChanged && !shouldRecordCommit) {
         return;
       }
 
-      if (shouldCommit) {
-        setHistory((previousHistory) => commitHistoryEntry(previousHistory, currentShapes));
+      if (shouldRecordCommit) {
+        setHistory((previousHistory) => commitHistoryEntry(previousHistory, commitBase));
       }
 
-      setShapes(nextShapes);
+      if (shapesChanged) {
+        setShapes(nextShapes);
+      }
 
       if (!preserveSelection) {
         setSelectedShapeIds([]);
@@ -203,6 +211,16 @@ export default function GeofenceBuilderPage() {
         return buildFallbackShapeFromDraw(entry.id, entry.polygon, index);
       });
 
+      if (context?.source === "change" && !pendingDrawCommitBaseRef.current) {
+        pendingDrawCommitBaseRef.current = shapesRef.current;
+      }
+
+      const drawCommitBase =
+        context?.source === "finish" ? (pendingDrawCommitBaseRef.current ?? shapesRef.current) : undefined;
+      if (context?.source === "finish") {
+        pendingDrawCommitBaseRef.current = null;
+      }
+
       applyShapes(nextShapes, {
         commit: context?.commitHistory ?? false,
         source:
@@ -212,6 +230,7 @@ export default function GeofenceBuilderPage() {
               ? "rehydrate"
               : "draw_change",
         preserveSelection: true,
+        commitBase: drawCommitBase,
       });
     },
     [applyShapes],
@@ -219,6 +238,7 @@ export default function GeofenceBuilderPage() {
 
   const handleImportWkt = () => {
     try {
+      pendingDrawCommitBaseRef.current = null;
       const imported = fromWktToMultiPolygon(wktInput);
       const normalized = normalizeAnySupportedGeometryToMultiPolygon(imported);
       const importedShapes = createFallbackShapesFromMultiPolygon(normalized);
@@ -236,6 +256,7 @@ export default function GeofenceBuilderPage() {
 
   const handleImportJson = () => {
     try {
+      pendingDrawCommitBaseRef.current = null;
       const parsed = parseMetadataShapesJson(jsonInput);
 
       applyShapes(parsed.shapes, { commit: true, source: "import", preserveSelection: false, syncDraw: true });
@@ -273,11 +294,13 @@ export default function GeofenceBuilderPage() {
   };
 
   const handleShapeNameCommit = (shapeId: string, nextName: string) => {
+    pendingDrawCommitBaseRef.current = null;
     const nextShapes = shapesRef.current.map((shape) => (shape.id === shapeId ? { ...shape, name: nextName } : shape));
     applyShapes(nextShapes, { commit: true, source: "metadata", preserveSelection: true });
   };
 
   const handleShapeTagsChange = (shapeId: string, rawTags: string) => {
+    pendingDrawCommitBaseRef.current = null;
     const normalizedTags = normalizeTags(rawTags);
     const nextShapes = shapesRef.current.map((shape) =>
       shape.id === shapeId ? { ...shape, tags: normalizedTags } : shape,
@@ -290,6 +313,7 @@ export default function GeofenceBuilderPage() {
       return;
     }
 
+    pendingDrawCommitBaseRef.current = null;
     const remainingShapes = shapesRef.current.filter((shape) => !selectedShapeIds.includes(shape.id));
     applyShapes(remainingShapes, { commit: true, source: "delete", preserveSelection: false, syncDraw: true });
     setFocusedOverlap((previous) => {
@@ -335,6 +359,7 @@ export default function GeofenceBuilderPage() {
   };
 
   const handleUndo = () => {
+    pendingDrawCommitBaseRef.current = null;
     const result = undoHistory(history, shapes);
     if (!result) {
       return;
@@ -345,6 +370,7 @@ export default function GeofenceBuilderPage() {
   };
 
   const handleRedo = () => {
+    pendingDrawCommitBaseRef.current = null;
     const result = redoHistory(history, shapes);
     if (!result) {
       return;
