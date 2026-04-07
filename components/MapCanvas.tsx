@@ -24,7 +24,10 @@ type MapCanvasProps = {
   canonicalShapes: ShapeRecord[];
   activeShapeId: string | null;
   syncRevision: number;
-  onDrawPolygonsChange: (shapes: Array<{ id: string; polygon: GeoJSON.Polygon }>) => void;
+  onDrawPolygonsChange: (
+    shapes: Array<{ id: string; polygon: GeoJSON.Polygon }>,
+    context?: { commitHistory?: boolean; source?: "change" | "finish" | "rehydrate" },
+  ) => void;
   onActiveShapeChange?: (shapeId: string | null) => void;
   overlapPairs: OverlapPair[];
   focusedOverlapPairKey: string | null;
@@ -329,12 +332,15 @@ export function MapCanvas({
       drawRef.current = draw;
       draw.setMode(modeRef.current);
 
-      unsubscribeDrawChangesRef.current = draw.subscribeToChanges(() => {
+      unsubscribeDrawChangesRef.current = draw.subscribeToChanges((eventType) => {
         const polygons = draw.getPolygonFeatures();
         if (isImportHydratingRef.current && polygons.length === 0) {
           return;
         }
-        onDrawPolygonsChange(polygons);
+        onDrawPolygonsChange(polygons, {
+          commitHistory: eventType === "finish",
+          source: eventType,
+        });
       });
       unsubscribeSelectionRef.current = draw.subscribeToSelection({
         onSelect: (shapeId) => {
@@ -357,7 +363,7 @@ export function MapCanvas({
           isImportHydratingRef.current = true;
           const hydratedPolygons = draw.replaceWithShapes(currentImported);
           if (hydratedPolygons.length > 0) {
-            onDrawPolygonsChange(hydratedPolygons);
+            onDrawPolygonsChange(hydratedPolygons, { commitHistory: false, source: "rehydrate" });
           }
         } catch (error) {
           console.error("[DRAW_HYDRATE] replaceWithShapes failed in style-ready path", error);
@@ -520,7 +526,7 @@ export function MapCanvas({
     if (importedShapes.length === 0) {
       drawRef.current.clearAll();
       onActiveShapeChange?.(null);
-      onDrawPolygonsChange([]);
+      onDrawPolygonsChange([], { commitHistory: false, source: "rehydrate" });
       return;
     }
 
@@ -528,7 +534,7 @@ export function MapCanvas({
       isImportHydratingRef.current = true;
       const hydratedPolygons = drawRef.current.replaceWithShapes(importedShapes);
       if (hydratedPolygons.length > 0) {
-        onDrawPolygonsChange(hydratedPolygons);
+        onDrawPolygonsChange(hydratedPolygons, { commitHistory: false, source: "rehydrate" });
       }
     } catch (error) {
       console.error("[DRAW_HYDRATE] replaceWithShapes failed in import sync effect", error);

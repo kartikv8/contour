@@ -27,7 +27,7 @@ type SnapContext = {
 export type DrawSeam = {
   draw: TerraDraw;
   setMode: (mode: EditorMode) => void;
-  subscribeToChanges: (onChange: () => void) => () => void;
+  subscribeToChanges: (onChange: (eventType: "change" | "finish") => void) => () => void;
   subscribeToSelection: (handlers: { onSelect?: (id: string) => void; onDeselect?: (id: string) => void }) => () => void;
   getPolygonFeatures: () => Array<{ id: string; polygon: Polygon }>;
   replaceWithShapes: (shapes: Array<{ id: string; polygon: Polygon }>) => Array<{ id: string; polygon: Polygon }>;
@@ -152,17 +152,20 @@ export function initDrawSeam(map: Map): DrawSeam {
     draw.setMode(mode);
   };
 
-  const subscribeToChanges = (onChange: () => void): (() => void) => {
-    const listener = () => {
-      onChange();
+  const subscribeToChanges = (onChange: (eventType: "change" | "finish") => void): (() => void) => {
+    const handleChange = () => {
+      onChange("change");
+    };
+    const handleFinish = () => {
+      onChange("finish");
     };
 
-    draw.on("change", listener);
-    draw.on("finish", listener);
+    draw.on("change", handleChange);
+    draw.on("finish", handleFinish);
 
     return () => {
-      draw.off("change", listener);
-      draw.off("finish", listener);
+      draw.off("change", handleChange);
+      draw.off("finish", handleFinish);
     };
   };
 
