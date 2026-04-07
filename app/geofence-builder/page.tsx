@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExportWktPanel } from "../../components/ExportWktPanel";
 import { ImportWktPanel } from "../../components/ImportWktPanel";
 import { MapCanvas } from "../../components/MapCanvas";
@@ -12,6 +12,14 @@ import { createFallbackShapesFromMultiPolygon, parseMetadataShapesJson } from ".
 import { EditorMode, ShapeRecord } from "../../lib/geometry/types";
 import { validateMultiPolygon } from "../../lib/geometry/validate";
 import { fromWktToMultiPolygon, toWktMultiPolygon } from "../../lib/geometry/wkt";
+import {
+  areShapeSnapshotsEqual,
+  commitHistoryEntry,
+  createHistoryState,
+  HistoryState,
+  redoHistory,
+  undoHistory,
+} from "../../lib/state/history";
 
 function toMultiPolygonFromShapes(shapes: ShapeRecord[]): GeoJSON.MultiPolygon | null {
   if (shapes.length === 0) {
@@ -69,6 +77,13 @@ export default function GeofenceBuilderPage() {
     geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon;
     nonce: number;
   } | null>(null);
+  const [history, setHistory] = useState<HistoryState>(() => createHistoryState());
+  const shapesRef = useRef<ShapeRecord[]>(shapes);
+  const pendingDrawCommitBaseRef = useRef<ShapeRecord[] | null>(null);
+
+  useEffect(() => {
+    shapesRef.current = shapes;
+  }, [shapes]);
 
   const combinedGeometry = useMemo(() => toMultiPolygonFromShapes(shapes), [shapes]);
 
@@ -130,11 +145,64 @@ export default function GeofenceBuilderPage() {
     return toWktMultiPolygon(combinedGeometry, precision);
   }, [combinedGeometry, precision]);
 
-  const handleDrawPolygonsChange = useCallback((entries: Array<{ id: string; polygon: GeoJSON.Polygon }>) => {
-    setShapes((previous) => {
-      const previousById = new Map(previous.map((shape) => [shape.id, shape]));
+  const applyShapes = useCallback(
+    (
+      nextShapes: ShapeRecord[],
+      options?: {
+        commit?: boolean;
+        source?: "draw_change" | "draw_finish" | "import" | "delete" | "metadata" | "undo" | "redo" | "rehydrate";
+        preserveSelection?: boolean;
+        syncDraw?: boolean;
+        commitBase?: ShapeRecord[];
+      },
+    ) => {
+      const shouldCommit = options?.commit ?? false;
+      const preserveSelection = options?.preserveSelection ?? true;
+      const shouldSyncDraw = options?.syncDraw ?? false;
 
-      return entries.map((entry, index) => {
+      const currentShapes = shapesRef.current;
+      const commitBase = options?.commitBase ?? currentShapes;
+      const shapesChanged = !areShapeSnapshotsEqual(currentShapes, nextShapes);
+      const shouldRecordCommit = shouldCommit && !areShapeSnapshotsEqual(commitBase, nextShapes);
+
+      if (!shapesChanged && !shouldRecordCommit) {
+        return;
+      }
+
+      if (shouldRecordCommit) {
+        setHistory((previousHistory) => commitHistoryEntry(previousHistory, commitBase));
+      }
+
+      if (shapesChanged) {
+        setShapes(nextShapes);
+      }
+
+      if (!preserveSelection) {
+        setSelectedShapeIds([]);
+        setActiveShapeId(null);
+      } else {
+        setSelectedShapeIds((previousSelected) => previousSelected.filter((shapeId) => nextShapes.some((shape) => shape.id === shapeId)));
+        setActiveShapeId((previousActive) =>
+          previousActive && nextShapes.some((shape) => shape.id === previousActive) ? previousActive : null,
+        );
+      }
+
+      setImportErrors([]);
+
+      if (shouldSyncDraw) {
+        setSyncRevision((previous) => previous + 1);
+      }
+    },
+    [],
+  );
+
+  const handleDrawPolygonsChange = useCallback(
+    (
+      entries: Array<{ id: string; polygon: GeoJSON.Polygon }>,
+      context?: { commitHistory?: boolean; source?: "change" | "finish" | "rehydrate" },
+    ) => {
+      const previousById = new Map(shapesRef.current.map((shape) => [shape.id, shape]));
+      const nextShapes = entries.map((entry, index) => {
         const existing = previousById.get(entry.id);
         if (existing) {
           return { ...existing, polygon: entry.polygon };
@@ -142,22 +210,40 @@ export default function GeofenceBuilderPage() {
 
         return buildFallbackShapeFromDraw(entry.id, entry.polygon, index);
       });
-    });
-    setSelectedShapeIds((previous) => previous.filter((shapeId) => entries.some((entry) => entry.id === shapeId)));
-    setActiveShapeId((previous) => (previous && entries.some((entry) => entry.id === previous) ? previous : null));
-    setImportErrors([]);
-  }, []);
+
+      if (context?.source === "change" && !pendingDrawCommitBaseRef.current) {
+        pendingDrawCommitBaseRef.current = shapesRef.current;
+      }
+
+      const drawCommitBase =
+        context?.source === "finish" ? (pendingDrawCommitBaseRef.current ?? shapesRef.current) : undefined;
+      if (context?.source === "finish") {
+        pendingDrawCommitBaseRef.current = null;
+      }
+
+      applyShapes(nextShapes, {
+        commit: context?.commitHistory ?? false,
+        source:
+          context?.source === "finish"
+            ? "draw_finish"
+            : context?.source === "rehydrate"
+              ? "rehydrate"
+              : "draw_change",
+        preserveSelection: true,
+        commitBase: drawCommitBase,
+      });
+    },
+    [applyShapes],
+  );
 
   const handleImportWkt = () => {
     try {
+      pendingDrawCommitBaseRef.current = null;
       const imported = fromWktToMultiPolygon(wktInput);
       const normalized = normalizeAnySupportedGeometryToMultiPolygon(imported);
       const importedShapes = createFallbackShapesFromMultiPolygon(normalized);
 
-      setShapes(importedShapes);
-      setSelectedShapeIds([]);
-      setActiveShapeId(null);
-      setSyncRevision((previous) => previous + 1);
+      applyShapes(importedShapes, { commit: true, source: "import", preserveSelection: false, syncDraw: true });
       setImportErrors([]);
       setMode("select");
       setFocusedOverlap(null);
@@ -170,12 +256,10 @@ export default function GeofenceBuilderPage() {
 
   const handleImportJson = () => {
     try {
+      pendingDrawCommitBaseRef.current = null;
       const parsed = parseMetadataShapesJson(jsonInput);
 
-      setShapes(parsed.shapes);
-      setSelectedShapeIds([]);
-      setActiveShapeId(null);
-      setSyncRevision((previous) => previous + 1);
+      applyShapes(parsed.shapes, { commit: true, source: "import", preserveSelection: false, syncDraw: true });
       setImportErrors([]);
       setMode("select");
       setFocusedOverlap(null);
@@ -209,18 +293,19 @@ export default function GeofenceBuilderPage() {
     );
   };
 
-  const handleShapeNameChange = (shapeId: string, nextName: string) => {
-    setShapes((previous) =>
-      previous.map((shape) => (shape.id === shapeId ? { ...shape, name: nextName } : shape)),
-    );
+  const handleShapeNameCommit = (shapeId: string, nextName: string) => {
+    pendingDrawCommitBaseRef.current = null;
+    const nextShapes = shapesRef.current.map((shape) => (shape.id === shapeId ? { ...shape, name: nextName } : shape));
+    applyShapes(nextShapes, { commit: true, source: "metadata", preserveSelection: true });
   };
 
   const handleShapeTagsChange = (shapeId: string, rawTags: string) => {
+    pendingDrawCommitBaseRef.current = null;
     const normalizedTags = normalizeTags(rawTags);
-
-    setShapes((previous) =>
-      previous.map((shape) => (shape.id === shapeId ? { ...shape, tags: normalizedTags } : shape)),
+    const nextShapes = shapesRef.current.map((shape) =>
+      shape.id === shapeId ? { ...shape, tags: normalizedTags } : shape,
     );
+    applyShapes(nextShapes, { commit: true, source: "metadata", preserveSelection: true });
   };
 
   const handleClearSelected = () => {
@@ -228,13 +313,9 @@ export default function GeofenceBuilderPage() {
       return;
     }
 
-    const remainingShapes = shapes.filter((shape) => !selectedShapeIds.includes(shape.id));
-    setShapes(remainingShapes);
-    setSelectedShapeIds([]);
-    setActiveShapeId((previous) =>
-      previous && remainingShapes.some((shape) => shape.id === previous) ? previous : null,
-    );
-    setSyncRevision((previous) => previous + 1);
+    pendingDrawCommitBaseRef.current = null;
+    const remainingShapes = shapesRef.current.filter((shape) => !selectedShapeIds.includes(shape.id));
+    applyShapes(remainingShapes, { commit: true, source: "delete", preserveSelection: false, syncDraw: true });
     setFocusedOverlap((previous) => {
       if (!previous) {
         return null;
@@ -277,6 +358,28 @@ export default function GeofenceBuilderPage() {
     setMapFocusRequest((previous) => ({ geometry: overlap.geometry, nonce: (previous?.nonce ?? 0) + 1 }));
   };
 
+  const handleUndo = () => {
+    pendingDrawCommitBaseRef.current = null;
+    const result = undoHistory(history, shapes);
+    if (!result) {
+      return;
+    }
+
+    setHistory(result.history);
+    applyShapes(result.shapes, { commit: false, source: "undo", preserveSelection: true, syncDraw: true });
+  };
+
+  const handleRedo = () => {
+    pendingDrawCommitBaseRef.current = null;
+    const result = redoHistory(history, shapes);
+    if (!result) {
+      return;
+    }
+
+    setHistory(result.history);
+    applyShapes(result.shapes, { commit: false, source: "redo", preserveSelection: true, syncDraw: true });
+  };
+
   const focusedPairKey = selectedOverlap?.pairKey ?? null;
 
   return (
@@ -287,7 +390,14 @@ export default function GeofenceBuilderPage() {
         <p className="muted">Import will replace existing shapes.</p>
         <p className="muted">{activeShapeId ? `Active shape on map: ${activeShapeId}` : "No active map selection."}</p>
 
-        <Toolbar mode={mode} onModeChange={setMode} />
+        <Toolbar
+          mode={mode}
+          canUndo={history.past.length > 0}
+          canRedo={history.future.length > 0}
+          onModeChange={setMode}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+        />
 
         <ImportWktPanel
           importMode={importMode}
@@ -311,7 +421,7 @@ export default function GeofenceBuilderPage() {
           onCopyCombined={handleCopyCombined}
           onToggleShape={handleToggleShape}
           onClearSelected={handleClearSelected}
-          onShapeNameChange={handleShapeNameChange}
+          onShapeNameCommit={handleShapeNameCommit}
           onShapeTagsChange={handleShapeTagsChange}
           onSetActiveShape={setActiveShapeId}
         />
